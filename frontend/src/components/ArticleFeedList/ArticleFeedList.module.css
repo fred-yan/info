@@ -1,0 +1,51 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.articleItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.articleItem:last-child {
+  border-bottom: none;
+}
+
+.articleTitle {
+  font-size: 14px;
+  color: #1a73e8;
+  text-decoration: none;
+  line-height: 1.5;
+}
+
+.articleTitle:hover {
+  text-decoration: underline;
+}
+
+.articleMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #757575;
+}
+
+.platformLabel {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.sectionLabel {
+  color: #666;
+}
+
+.timestamp {
+  color: #999;
+}

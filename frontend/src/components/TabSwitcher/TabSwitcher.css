@@ -1,0 +1,36 @@
+.tab-switcher {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border, #e0e0e0);
+  margin-bottom: 16px;
+}
+
+.tab-switcher__tab {
+  flex: 1;
+  padding: 10px 20px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text, #555);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+
+.tab-switcher__tab:hover {
+  color: var(--accent, #1a73e8);
+  background-color: var(--accent-bg, rgba(26, 115, 232, 0.04));
+}
+
+.tab-switcher__tab:focus-visible {
+  outline: 2px solid var(--accent, #1a73e8);
+  outline-offset: -2px;
+}
+
+.tab-switcher__tab--active {
+  color: var(--accent, #1a73e8);
+  border-bottom-color: var(--accent, #1a73e8);
+  font-weight: 600;
+}

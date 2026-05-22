@@ -1,0 +1,12 @@
+requests
+beautifulsoup4
+rich
+hypothesis
+pytest
+lxml
+playwright
+django
+mysqlclient
+apscheduler==3.10.4
+jieba
+nltk

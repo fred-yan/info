@@ -1,0 +1,61 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.platformGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.articleCount {
+  font-size: 12px;
+  font-weight: 400;
+  color: #999;
+}
+
+.articleItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.articleTitle {
+  font-size: 14px;
+  color: #1a73e8;
+  text-decoration: none;
+  line-height: 1.5;
+}
+
+.articleTitle:hover {
+  text-decoration: underline;
+}
+
+.articleMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #757575;
+}
+
+.platformLabel {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}

@@ -1,0 +1,14 @@
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.message {
+  color: #757575;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}

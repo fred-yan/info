@@ -1,0 +1,93 @@
+:root {
+  --text: #374151;
+  --text-h: #111827;
+  --bg: #f9fafb;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --accent-bg: rgba(37, 99, 235, 0.1);
+  --error-bg: #fef2f2;
+  --error-text: #991b1b;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 16px/1.5 var(--sans);
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #d1d5db;
+    --text-h: #f3f4f6;
+    --bg: #111827;
+    --border: #374151;
+    --accent: #60a5fa;
+    --accent-bg: rgba(96, 165, 250, 0.15);
+    --error-bg: #451a1a;
+    --error-text: #fca5a5;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3 {
+  font-weight: 600;
+  color: var(--text-h);
+  margin: 0;
+}
+
+.error-boundary-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100svh;
+  padding: 2rem;
+  text-align: center;
+  gap: 1rem;
+}
+
+.error-boundary-fallback h1 {
+  font-size: 1.5rem;
+  color: var(--error-text);
+}
+
+.error-boundary-fallback p {
+  color: var(--text);
+  max-width: 400px;
+}
+
+.error-boundary-fallback button {
+  padding: 0.5rem 1.5rem;
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.error-boundary-fallback button:hover {
+  background: var(--accent);
+  color: white;
+}

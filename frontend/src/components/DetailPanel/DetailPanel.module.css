@@ -1,0 +1,14 @@
+.container {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.trendSection {
+  margin-bottom: 24px;
+}
+
+.articlesSection {
+  width: 100%;
+}
