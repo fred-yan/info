@@ -17,6 +17,9 @@ __pycache__/
 db.sqlite3
 *.sqlite3
 
+# Config with secrets
+llm_config.ini
+
 # Logs
 logs/
 *.log

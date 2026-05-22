@@ -111,15 +111,32 @@ class ExtractionResult(BaseModel):
     phrase_groups: List[PhraseGroup] = Field(..., description="短语归纳组")
 
 
+import configparser
+import os
+
 # ============= 配置定义 =============
 
+def _load_llm_config():
+    """从 llm_config.ini 读取配置"""
+    config = configparser.ConfigParser()
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'llm_config.ini')
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(
+            f"LLM 配置文件不存在: {config_path}\n"
+            f"请复制 llm_config.ini.example 为 llm_config.ini 并填入真实的 API Key"
+        )
+    config.read(config_path, encoding='utf-8')
+    return config['llm']
+
+
 class LLMConfig:
-    """大模型调用配置"""
-    MODEL = "qwen3.5-plus"
-    API_KEY = "sk-d0e245edaa9047dfa006f8217a1c49a3"
-    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    MAX_TOKENS = 8192
-    TEMPERATURE = 0.1
+    """大模型调用配置 - 从 llm_config.ini 读取"""
+    _cfg = _load_llm_config()
+    MODEL = _cfg.get('model', 'qwen3.5-plus')
+    API_KEY = _cfg.get('api_key')
+    BASE_URL = _cfg.get('base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
+    MAX_TOKENS = int(_cfg.get('max_tokens', '8192'))
+    TEMPERATURE = float(_cfg.get('temperature', '0.1'))
 
 
 # ============= 核心逻辑 =============
