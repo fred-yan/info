@@ -19,6 +19,7 @@ db.sqlite3
 
 # Config with secrets
 llm_config.ini
+db_config.ini
 
 # Logs
 logs/

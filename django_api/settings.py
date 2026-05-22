@@ -19,21 +19,33 @@ INSTALLED_APPS = [
 
 ROOT_URLCONF = 'django_api.urls'
 
+import configparser
+
+_db_config = configparser.ConfigParser()
+_db_config_path = BASE_DIR / 'db_config.ini'
+if not _db_config_path.exists():
+    raise FileNotFoundError(
+        f"数据库配置文件不存在: {_db_config_path}\n"
+        f"请复制 db_config.ini.example 为 db_config.ini 并填入真实的数据库连接信息"
+    )
+_db_config.read(_db_config_path, encoding='utf-8')
+_db = _db_config['database']
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'info_api',
-        'USER': 'root',
-        'PASSWORD': 'mysql@123',
-        'HOST': '47.106.210.117',
-        'PORT': '3306',
+        'ENGINE': _db.get('engine', 'django.db.backends.mysql'),
+        'NAME': _db.get('name', 'info_api'),
+        'USER': _db.get('user', 'root'),
+        'PASSWORD': _db.get('password', ''),
+        'HOST': _db.get('host', '127.0.0.1'),
+        'PORT': _db.get('port', '3306'),
         'OPTIONS': {
-            'charset': 'utf8mb4',
-            'connect_timeout': 10,
-            'read_timeout': 30,
-            'write_timeout': 30,
+            'charset': _db.get('charset', 'utf8mb4'),
+            'connect_timeout': int(_db.get('connect_timeout', '10')),
+            'read_timeout': int(_db.get('read_timeout', '30')),
+            'write_timeout': int(_db.get('write_timeout', '30')),
         },
-        'CONN_MAX_AGE': 0,  # 每次请求后关闭连接，避免长时间空闲超时
+        'CONN_MAX_AGE': 0,
     }
 }
 
