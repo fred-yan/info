@@ -1,6 +1,8 @@
 [llm]
-model = qwen3.5-plus
+# DeepSeek API 配置
+# 获取 API Key: https://platform.deepseek.com/api_keys
+model = deepseek-v4-pro
 api_key = sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-base_url = https://dashscope.aliyuncs.com/compatible-mode/v1
+base_url = https://api.deepseek.com
 max_tokens = 8192
 temperature = 0.1
