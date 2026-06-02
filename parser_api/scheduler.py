@@ -174,8 +174,11 @@ def fetch_task_wrapper(platform: str, **kwargs):
 
         # keyword_analysis_llm 走 LLM 逻辑（国内 + 国际两组都跑）
         if platform == 'keyword_analysis_llm':
+            from django.db import close_old_connections
+            close_old_connections()  # 刷新连接，避免长时间空闲后连接断开
             from parser_api.llm_keyword_extractor import extract_keywords_llm
             extract_keywords_llm(group="domestic")
+            close_old_connections()  # 两组之间也刷新一次
             extract_keywords_llm(group="international")
             elapsed = time.time() - start_time
             logger.info(f"[Scheduler] Task completed: keyword_analysis_llm (elapsed={elapsed:.1f}s)")

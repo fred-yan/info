@@ -151,6 +151,42 @@ def _call_llm_safe(extractor: NewsPhraseExtractor, titles: list,
         )
 
         raw = response.choices[0].message.content
+        finish_reason = response.choices[0].finish_reason
+
+        # DeepSeek JSON Mode 有概率返回空 content，需要处理
+        if not raw or not raw.strip():
+            logger.warning("LLM returned empty content, retrying once...")
+            # 重试一次
+            response = extractor.client.chat.completions.create(
+                model=extractor.config.MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_TEMPLATE},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=extractor.config.TEMPERATURE,
+                max_tokens=extractor.config.MAX_TOKENS,
+                response_format={"type": "json_object"},
+            )
+            raw = response.choices[0].message.content
+            finish_reason = response.choices[0].finish_reason
+            if not raw or not raw.strip():
+                raise ValueError("LLM returned empty content after retry")
+
+        # 检查是否被截断
+        if finish_reason == "length":
+            logger.warning("LLM output truncated (finish_reason=length), tokens used: %s",
+                          response.usage.completion_tokens if response.usage else "unknown")
+            raise ValueError(f"Output truncated at {len(raw)} chars, need larger max_tokens or smaller batch")
+
+        # 统计 token 使用
+        if response.usage:
+            logger.info(
+                "LLM tokens: prompt=%d, completion=%d, total=%d",
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                response.usage.total_tokens,
+            )
+
         result = json.loads(raw)
 
         try:
@@ -193,7 +229,8 @@ def _call_llm_safe(extractor: NewsPhraseExtractor, titles: list,
                 success=False,
                 error_msg=str(e),
             )
-        raise
+        # 返回空结果，让流程继续处理其他批次
+        return {"items": [], "phrase_groups": []}
 
 
 def _save_batch_extractions(llm_result, seq_to_title, title_to_ids, analysis_time) -> int:
@@ -284,11 +321,11 @@ def _score_phrase_groups(phrase_groups, id_to_article: dict, total_platforms: in
 
 # ==================== 主入口 ====================
 
-BATCH_SIZE = 50
+BATCH_SIZE = 10  # 每批 10 条标题，避免输出超过 max_tokens 被截断
 
 
 def extract_keywords_llm(group: str = "domestic", top: int = 50,
-                          force: bool = False) -> dict:
+                          force: bool = False, batch_size: int | None = None) -> dict:
     """
     LLM 热点短语提取主入口。
 
@@ -296,7 +333,9 @@ def extract_keywords_llm(group: str = "domestic", top: int = 50,
         group: "domestic" / "international"
         top: 返回前 N 个短语
         force: True 时跳过缓存，强制重新调用 LLM
+        batch_size: 每批标题数量（None 则使用默认值 BATCH_SIZE）
     """
+    effective_batch_size = batch_size or BATCH_SIZE
     cfg = settings.PLATFORM_GROUPS.get(group)
     if not cfg:
         return {"error": f"unknown group: {group}"}
@@ -332,14 +371,14 @@ def extract_keywords_llm(group: str = "domestic", top: int = 50,
         combined = _load_from_cache(all_article_ids, id_to_article)
         phrase_groups = combined["phrase_groups"]
     else:
-        logger.info("cache miss — calling LLM in batches of %d", BATCH_SIZE)
+        logger.info("cache miss — calling LLM in batches of %d", effective_batch_size)
         extractor = NewsPhraseExtractor()
         all_items = []
         all_phrase_groups = []
 
-        for i in range(0, len(unique_titles), BATCH_SIZE):
-            batch = unique_titles[i:i + BATCH_SIZE]
-            batch_idx = i // BATCH_SIZE + 1
+        for i in range(0, len(unique_titles), effective_batch_size):
+            batch = unique_titles[i:i + effective_batch_size]
+            batch_idx = i // effective_batch_size + 1
             logger.info("  batch %d-%d / %d", i + 1, i + len(batch), len(unique_titles))
             result = _call_llm_safe(extractor, batch,
                                      group=group, batch_index=batch_idx,

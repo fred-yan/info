@@ -146,10 +146,11 @@ class NewsPhraseExtractor:
 
     def __init__(self, config: LLMConfig = None):
         self.config = config or LLMConfig()
-        # 初始化 OpenAI 客户端
+        # 初始化 OpenAI 客户端（timeout 设为 300 秒，50 条标题处理较慢）
         self.client = OpenAI(
             api_key=self.config.API_KEY,
-            base_url=self.config.BASE_URL
+            base_url=self.config.BASE_URL,
+            timeout=300.0,
         )
 
     def _format_titles(self, titles: List[TitleInput]) -> str:
