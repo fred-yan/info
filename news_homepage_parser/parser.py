@@ -19,8 +19,9 @@ _TAB_SITES: dict[str, list[str | None]] = {
 # 需要使用 HTTP/1.1 的网站（HTTP/2 有问题）
 _HTTP1_SITES = {"washingtonpost.com", "cn.wsj.com"}
 
-# 需要非 headless 模式的网站（调试用）
-_NON_HEADLESS_SITES = {"washingtonpost.com", "cn.wsj.com"}
+# 需要非 headless 模式的网站
+# 注意：云服务器无 X Server 时需安装 xvfb 或改为空集合
+_NON_HEADLESS_SITES: set[str] = set()  # 云服务器部署时置空
 
 
 def parse(url: str, output_format: str = "json") -> ParseResult:
