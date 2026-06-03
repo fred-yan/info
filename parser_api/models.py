@@ -101,6 +101,29 @@ class LLMPhraseExtraction(models.Model):
         return f"article={self.article_id} phrases={self.normalized_phrases[:50]}"
 
 
+class LLMPhraseGroup(models.Model):
+    """阶段2: LLM 全局短语归纳组"""
+    analysis_time = models.DateTimeField(verbose_name="分析时间")
+    group = models.CharField(max_length=20, verbose_name="分组")  # domestic_llm / international_llm
+    representative = models.CharField(max_length=200, verbose_name="代表短语")
+    members = models.TextField(verbose_name="成员短语列表")  # JSON list
+    article_ids = models.TextField(verbose_name="关联文章ID")  # JSON list of info.id
+    article_count = models.IntegerField(verbose_name="关联文章数")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "llm_phrase_group"
+        verbose_name = "LLM短语归纳组"
+        verbose_name_plural = "LLM短语归纳组"
+        indexes = [
+            models.Index(fields=["analysis_time", "group"]),
+            models.Index(fields=["representative"]),
+        ]
+
+    def __str__(self):
+        return f"{self.representative} ({self.article_count} articles)"
+
+
 class LLMBatchLog(models.Model):
     """LLM 批次调用日志 - 记录每次 LLM 调用的输入和输出，便于调试"""
     analysis_time = models.DateTimeField(verbose_name="分析时间")

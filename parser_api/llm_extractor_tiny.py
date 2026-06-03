@@ -137,6 +137,7 @@ class LLMConfig:
     BASE_URL = _cfg.get('base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
     MAX_TOKENS = int(_cfg.get('max_tokens', '8192'))
     TEMPERATURE = float(_cfg.get('temperature', '0.1'))
+    BATCH_SIZE = int(_cfg.get('batch_size', '10'))
 
 
 # ============= 核心逻辑 =============
