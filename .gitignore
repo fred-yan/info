@@ -35,7 +35,6 @@ debug_*.py
 inspect_*.py
 output.txt
 test_output.txt
-*.html
 install-pyenv-win.ps1
 
 # OS
