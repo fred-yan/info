@@ -23,6 +23,21 @@ _HTTP1_SITES = {"washingtonpost.com", "cn.wsj.com"}
 # 注意：云服务器无 X Server 时需安装 xvfb 或改为空集合
 _NON_HEADLESS_SITES: set[str] = set()  # 云服务器部署时置空
 
+# 需要等待 Cloudflare Challenge 通过的网站，value 为最大等待秒数
+_CF_WAIT_SITES: dict[str, int] = {
+    "cn.wsj.com": 15,
+}
+
+# SPA 站点需要更长的 JS 渲染等待时间（秒），默认 2s
+_WAIT_AFTER_SITES: dict[str, int] = {
+    "huxiu.com":            6,
+    "36kr.com":             5,
+    "tmtpost.com":          6,
+    "theverge.com":         6,
+    "techcrunch.com":       6,
+    "technologyreview.com": 6,
+}
+
 
 def parse(url: str, output_format: str = "json") -> ParseResult:
     """
@@ -48,19 +63,25 @@ def parse(url: str, output_format: str = "json") -> ParseResult:
         )
         use_http1 = any(site in domain for site in _HTTP1_SITES)
         headless = not any(site in domain for site in _NON_HEADLESS_SITES)
+        cf_wait = next(
+            (v for k, v in _CF_WAIT_SITES.items() if k in domain), 0
+        )
+        wait_after = next(
+            (v for k, v in _WAIT_AFTER_SITES.items() if k in domain), 2
+        )
 
         if tab_selectors:
             # 多次抓取，每次点击不同 tab，合并 HTML 片段
             combined_html_parts = []
             for selector in tab_selectors:
-                ok, html_or_error = fetch(canonical_url, click_selector=selector, use_http1=use_http1, headless=headless)
+                ok, html_or_error = fetch(canonical_url, click_selector=selector, use_http1=use_http1, headless=headless, cf_wait=cf_wait, wait_after=wait_after)
                 if not ok:
                     return ParseResult(url=url, fetched_at=now, error=html_or_error)
                 combined_html_parts.append(html_or_error)
             # 将多段 HTML 拼接，extractor 会分别解析
             html_or_error = "\n<!-- TAB_SEPARATOR -->\n".join(combined_html_parts)
         else:
-            ok, html_or_error = fetch(canonical_url, use_http1=use_http1, headless=headless)
+            ok, html_or_error = fetch(canonical_url, use_http1=use_http1, headless=headless, cf_wait=cf_wait, wait_after=wait_after)
             if not ok:
                 return ParseResult(url=url, fetched_at=now, error=html_or_error)
 

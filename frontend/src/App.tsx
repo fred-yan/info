@@ -1,8 +1,8 @@
 import { Component, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import NavBar from './components/NavBar';
+import { MultiPlatformPage } from './pages/MultiPlatformPage';
 import { HotspotPage } from './pages/HotspotPage';
-import { NewsFeedPage } from './pages/NewsFeedPage';
 import PlatformStatus from './components/PlatformStatus';
 
 interface ErrorBoundaryProps {
@@ -50,8 +50,8 @@ function App() {
       <BrowserRouter>
         <NavBar />
         <Routes>
-          <Route path="/" element={<HotspotPage />} />
-          <Route path="/feed" element={<NewsFeedPage />} />
+          <Route path="/" element={<MultiPlatformPage />} />
+          <Route path="/keywords" element={<HotspotPage />} />
           <Route path="/platforms" element={<PlatformStatus />} />
         </Routes>
       </BrowserRouter>

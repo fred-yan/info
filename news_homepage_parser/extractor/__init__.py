@@ -8,7 +8,7 @@ import logging
 from news_homepage_parser.models import NewsItem
 from ._utils import dedup
 
-from . import economist, apnews, ftchinese, wsj, kr36, huxiu, washingtonpost, zaobao, generic
+from . import economist, apnews, ftchinese, wsj, kr36, huxiu, washingtonpost, zaobao, tmtpost, theverge, techcrunch, mittr, generic
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,18 @@ def extract(html: str, base_url: str) -> tuple[list[NewsItem], list[NewsItem], l
         elif "36kr.com" in domain:
             items = kr36.extract(soup, base_url)
             skip_dedup = True  # 36氪不去重
+        elif "tmtpost.com" in domain:
+            items = tmtpost.extract(soup, base_url)
+            skip_dedup = True  # 钛媒体不去重
+        elif "theverge.com" in domain:
+            items = theverge.extract(soup, base_url)
+            skip_dedup = True
+        elif "techcrunch.com" in domain:
+            items = techcrunch.extract(soup, base_url)
+            skip_dedup = True
+        elif "technologyreview.com" in domain:
+            items = mittr.extract(soup, base_url)
+            skip_dedup = True
         else:
             warnings.append("Generic extraction strategy applied")
             items = generic.extract(soup, base_url)

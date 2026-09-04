@@ -38,9 +38,10 @@ export function groupArticlesByPlatform(
 
 /**
  * Checks if a timestamp is older than the given threshold in hours.
- * Defaults to 2 hours if no threshold is provided.
+ * Defaults to 8 hours — data is fetched every 6 hours, so anything
+ * within that window is still considered fresh.
  */
-export function isStale(timestamp: string, thresholdHours: number = 2): boolean {
+export function isStale(timestamp: string, thresholdHours: number = 8): boolean {
   const fetchTime = new Date(timestamp).getTime();
   const now = Date.now();
   return (now - fetchTime) > thresholdHours * 60 * 60 * 1000;
@@ -52,6 +53,7 @@ export function isStale(timestamp: string, thresholdHours: number = 2): boolean 
 export function mapHttpErrorToMessage(status: number): string {
   if (status === 404) return '数据未找到，请稍后重试';
   if (status === 408 || status === 504) return '请求超时，请检查网络连接';
+  if (status === 503) return '资讯获取错误';
   if (status >= 500) return '服务器错误，请稍后重试';
   if (status >= 400) return '请求错误，请刷新页面';
   return '未知错误';

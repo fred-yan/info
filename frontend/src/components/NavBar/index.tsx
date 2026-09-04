@@ -13,17 +13,17 @@ export default function NavBar() {
               isActive ? `${styles.navLink} ${styles.active}` : styles.navLink
             }
           >
-            热点分析
+            热点快讯
           </NavLink>
         </li>
         <li>
           <NavLink
-            to="/feed"
+            to="/keywords"
             className={({ isActive }) =>
               isActive ? `${styles.navLink} ${styles.active}` : styles.navLink
             }
           >
-            新闻动态
+            关键词榜
           </NavLink>
         </li>
         <li>

@@ -3,130 +3,68 @@ from news_homepage_parser.models import NewsItem
 from ._utils import resolve_link
 
 
-def extract(soup: BeautifulSoup, base_url: str) -> list[NewsItem]:
+# ── API-based fetcher (no Playwright needed) ──────────────────────────────────
+
+def fetch_article_list(page_size: int = 20) -> list[NewsItem]:
     """
-    虎嗅专用策略：只提取 48 小时热文榜（带排名，不去重）。
-    section 命名为 hotlist，添加 ranktime=48hour。
-    is_original=True 的文章添加 attr="original"。
+    通过 api-article.huxiu.com 接口获取虎嗅文章列表，无需 Playwright。
+    虎嗅首页部署了阿里云 WAF 滑动验证码，Playwright 无法绕过，改用内部 API。
+    返回 section="section_1" 的 NewsItem 列表。
     """
+    import logging
+    import urllib.request
+    import urllib.error
+    import json
+
+    logger = logging.getLogger(__name__)
+    url = f"https://api-article.huxiu.com/web/article/articleList?platform=www&pagesize={page_size}"
+
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://www.huxiu.com/",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://www.huxiu.com",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        logger.error("huxiu api http error: %s", e)
+        return []
+    except Exception as e:
+        logger.error("huxiu api error: %s", e)
+        return []
+
+    if not data.get("success"):
+        logger.warning("huxiu api returned success=false: %s", data)
+        return []
+
     items = []
-    
-    wrap = soup.find("div", class_="hot-article-wrap")
-    if not wrap:
-        return items
-    
-    rank = 0
-    for child in wrap.children:
-        if not hasattr(child, "name") or child.name != "div":
+    for rank, article in enumerate(data.get("data", {}).get("dataList", []), 1):
+        title = article.get("title", "").strip()
+        aid = article.get("aid", "")
+        share_url = article.get("share_url", "")
+
+        if not title or not aid:
             continue
-        if "article-wrap" not in " ".join(child.get("class", [])):
-            continue
-        info = child.find("div", class_="article-wrap__info")
-        if not info:
-            continue
-        a = info.find("a", href=True)
-        if not a:
-            continue
-        href = a["href"]
-        if "/article/" not in href:
-            continue
-        link = resolve_link(href, base_url)
-        title = a.get_text(strip=True)
-        if not title:
-            continue
-        
-        # 检测并移除"原创"标签
-        is_original = False
-        if title.startswith("原创"):
-            is_original = True
-            title = title[2:].strip()  # 移除"原创"两个字
-        
-        rank += 1
-        
-        # 如果是原创，添加 attr 和 detail
-        attr_value = "original" if is_original else None
+
+        link = share_url or f"https://www.huxiu.com/article/{aid}.html"
+        link = link.replace("m.huxiu.com", "www.huxiu.com")
+
+        is_original = article.get("is_original", "0") == "1"
         detail = {"attr": "original"} if is_original else None
-        
+
         items.append(NewsItem(
-            title=title, 
-            link=link, 
-            section="hotlist",  # 改为 hotlist
+            title=title,
+            link=link,
+            section="section_1",
             rank=rank,
-            ranktime="48hour",  # 添加 ranktime
-            attr=attr_value,  # 添加 attr（仅原创文章）
-            detail=detail  # 添加 detail（仅原创文章）
+            detail=detail,
         ))
 
-    return items
-
-
-def extract_first_section(soup: BeautifulSoup, base_url: str) -> list[NewsItem]:
-    """
-    提取首页第一个栏目的文章（约 3 篇）。
-    section 命名为 section_1。
-    is_original=True 的文章添加 attr="original"。
-    """
-    items = []
-    
-    # 查找 home-top section
-    home_top = soup.find("section", class_="home-top")
-    if not home_top:
-        return items
-    
-    seen_urls = set()
-    
-    # 遍历所有文章链接
-    for a in home_top.find_all("a", href=lambda x: x and "/article/" in x):
-        href = a.get("href", "")
-        
-        # 去重
-        if href in seen_urls:
-            continue
-        seen_urls.add(href)
-        
-        # 查找标题
-        title = None
-        
-        # 方法1: 查找 title 类的元素
-        title_elem = a.find(["h2", "h3", "h4", "div", "span"], 
-                           class_=lambda x: x and "title" in " ".join(x).lower())
-        if title_elem:
-            title = title_elem.get_text(strip=True)
-        
-        # 方法2: 查找 img 的 alt
-        if not title or len(title) < 5:
-            img = a.find("img")
-            if img and img.get("alt"):
-                title = img.get("alt")
-        
-        # 方法3: 使用 a 标签的文本（排除短文本）
-        if not title or len(title) < 5:
-            text = a.get_text(strip=True)
-            if text and len(text) > 5 and len(text) < 200:
-                title = text
-        
-        if title and len(title) > 5:
-            # 检测并移除"原创"标签
-            is_original = False
-            if title.startswith("原创"):
-                is_original = True
-                title = title[2:].strip()  # 移除"原创"两个字
-            
-            # 如果是原创，添加 attr 和 detail
-            attr_value = "original" if is_original else None
-            detail = {"attr": "original"} if is_original else None
-            
-            link = resolve_link(href, base_url)
-            items.append(NewsItem(
-                title=title, 
-                link=link, 
-                section="section_1",  # 改为 section_1
-                attr=attr_value,  # 添加 attr（仅原创文章）
-                detail=detail  # 添加 detail（仅原创文章）
-            ))
-            
-            # 只提取前 3 篇
-            if len(items) >= 3:
-                break
-    
+    logger.info("huxiu api fetched %d articles", len(items))
     return items

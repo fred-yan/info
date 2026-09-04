@@ -7,4 +7,8 @@ SITE_URLS = {
     "huxiu": "https://www.huxiu.com/",
     "wst_post": "https://www.washingtonpost.com/",
     "zaobao": "https://www.zaobao.com.sg/cn",
+    "tmtpost": "https://www.tmtpost.com/new",
+    "theverge": "https://www.theverge.com/",
+    "techcrunch": "https://techcrunch.com/",
+    "mittr": "https://www.technologyreview.com/",
 }

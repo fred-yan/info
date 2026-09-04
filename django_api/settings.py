@@ -3,6 +3,16 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load .env file into os.environ (simple parser, no extra dependencies)
+_env_path = BASE_DIR / '.env'
+if _env_path.exists():
+    with open(_env_path, encoding='utf-8') as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _key, _, _val = _line.partition('=')
+                os.environ.setdefault(_key.strip(), _val.strip())
+
 os.makedirs(BASE_DIR / "logs", exist_ok=True)
 
 SECRET_KEY = 'django-insecure-dev-only-key-change-in-production'
@@ -122,9 +132,37 @@ SCHEDULER_CONFIG = {
     },
     'wsj': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
-        'enabled': True,
+        'enabled': False,  # cn.wsj.com 需要订阅账号，RSS 已关闭，暂停抓取
     },
     'kr36': {
+        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'enabled': True,
+    },
+    'tmtpost': {
+        'cron': '0 6,12,18,0 * * *',
+        'enabled': True,
+    },
+    'theverge': {
+        'cron': '0 6,12,18,0 * * *',
+        'enabled': True,
+    },
+    'techcrunch': {
+        'cron': '0 6,12,18,0 * * *',
+        'enabled': True,
+    },
+    'mittr': {
+        'cron': '0 6,12,18,0 * * *',
+        'enabled': True,
+    },
+    'jiqizhixin': {
+        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'enabled': True,
+    },
+    'cls': {
+        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'enabled': True,
+    },
+    'wscn': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
         'enabled': True,
     },
@@ -173,7 +211,7 @@ SCHEDULER_CONFIG = {
     },
     'washingtonpost': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
-        'enabled': True,
+        'enabled': False,  # 需要代理且反爬较强，暂停抓取
     },
     'keyword_analysis': {
         'cron': '5 6,12,18,0 * * *',
@@ -188,12 +226,12 @@ SCHEDULER_CONFIG = {
 # ==================== 平台分组配置 ====================
 PLATFORM_GROUPS = {
     "domestic": {
-        "platforms": ["ftchinese", "wsj", "kr36", "huxiu", "zaobao", "zhihu", "weibo", "pengpai"],
+        "platforms": ["ftchinese", "kr36", "tmtpost", "jiqizhixin", "cls", "wscn", "huxiu", "zaobao", "zhihu", "weibo", "pengpai"],
         "label": "国内热点",
         "lang": "zh"
     },
     "international": {
-        "platforms": ["economist", "apnews", "washingtonpost", "github", "hackernews"],
+        "platforms": ["economist", "apnews", "theverge", "techcrunch", "mittr", "github", "hackernews"],
         "label": "国际热点",
         "lang": "en"
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '../api/client';
 import type { PlatformMetadata } from '../types';
 
@@ -10,12 +10,18 @@ interface UsePlatformsResult {
   data: PlatformMetadata[] | null;
   loading: boolean;
   error: string | null;
+  retry: () => void;
 }
 
 export function usePlatforms(): UsePlatformsResult {
   const [data, setData] = useState<PlatformMetadata[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [fetchTrigger, setFetchTrigger] = useState<number>(0);
+
+  const retry = useCallback(() => {
+    setFetchTrigger((prev) => prev + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +49,7 @@ export function usePlatforms(): UsePlatformsResult {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchTrigger]);
 
-  return { data, loading, error };
+  return { data, loading, error, retry };
 }

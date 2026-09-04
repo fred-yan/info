@@ -21,6 +21,10 @@ PLATFORM_LABELS = {
     "wsj": "华尔街日报中文版",
     "kr36": "36氪",
     "huxiu": "虎嗅",
+    "tmtpost": "钛媒体",
+    "jiqizhixin": "机器之心",
+    "cls": "财联社",
+    "wscn": "华尔街见闻",
     "zaobao": "联合早报",
     "zhihu": "知乎",
     "weibo": "微博",
@@ -28,6 +32,9 @@ PLATFORM_LABELS = {
     "economist": "The Economist",
     "apnews": "AP News",
     "washingtonpost": "Washington Post",
+    "theverge": "The Verge",
+    "techcrunch": "TechCrunch",
+    "mittr": "MIT Technology Review",
     "github": "GitHub Trending",
     "hackernews": "Hacker News",
 }
@@ -89,17 +96,62 @@ def keywords_ranking_view(request):
         prev_results = KeywordResult.objects.filter(analysis=previous)
         prev_scores = {r.keyword: r.score for r in prev_results}
 
+    # 预取 sample_articles 里用到的文章 URL → 阶段1短语映射，用于透明性展示
+    from .models import LLMPhraseExtraction, Info as InfoModel
+    # Collect all article URLs from sample_articles across all results
+    all_sample_urls: set[str] = set()
+    raw_samples: dict[str, list] = {}
+    for r in results:
+        sa = json.loads(r.sample_articles)
+        raw_samples[r.keyword] = sa
+        for a in sa:
+            if a.get("url"):
+                all_sample_urls.add(a["url"])
+
+    # URL → article_id mapping
+    url_to_id: dict[str, int] = {}
+    if all_sample_urls:
+        for info in InfoModel.objects.filter(url__in=list(all_sample_urls)).only("id", "url"):
+            url_to_id[info.url] = info.id
+
+    # article_id → normalized_phrases mapping (latest extraction within 24h)
+    from django.utils import timezone as tz
+    from datetime import timedelta
+    since = tz.now() - timedelta(hours=24)
+    id_to_phrases: dict[int, list[str]] = {}
+    if url_to_id:
+        for ext in LLMPhraseExtraction.objects.filter(
+            article_id__in=list(url_to_id.values()),
+            analysis_time__gte=since,
+        ).order_by("-analysis_time"):
+            if ext.article_id not in id_to_phrases:
+                try:
+                    id_to_phrases[ext.article_id] = json.loads(ext.normalized_phrases or "[]")
+                except (json.JSONDecodeError, TypeError):
+                    id_to_phrases[ext.article_id] = []
+
     keywords = []
     for r in results:
         prev_score = prev_scores.get(r.keyword)
         if prev_score is None:
-            trend_direction = "rising"  # 新出现的关键词视为上升
+            trend_direction = "rising"
         elif r.score > prev_score:
             trend_direction = "rising"
         elif r.score < prev_score:
             trend_direction = "falling"
         else:
             trend_direction = "stable"
+
+        # Enrich sample_articles with the phrases extracted from each article
+        enriched_samples = []
+        for a in raw_samples.get(r.keyword, []):
+            url = a.get("url", "")
+            aid = url_to_id.get(url)
+            phrases = id_to_phrases.get(aid, []) if aid else []
+            enriched_samples.append({
+                **a,
+                "matched_phrases": phrases,  # 该文章阶段1提取出的短语，便于判断关联是否合理
+            })
 
         keywords.append({
             "keyword": r.keyword,
@@ -109,7 +161,7 @@ def keywords_ranking_view(request):
             "platform_count": r.platform_count,
             "coverage": round(r.coverage, 4),
             "sources": json.loads(r.sources),
-            "sample_articles": json.loads(r.sample_articles),
+            "sample_articles": enriched_samples,
             "trend_direction": trend_direction,
         })
 
@@ -323,16 +375,45 @@ def news_feed_view(request):
     })
 
 
+def _cron_to_interval_label(cron: str) -> str:
+    """
+    将 cron 表达式转成中文更新频率描述。
+    只处理项目中实际使用的几种模式。
+    """
+    if not cron:
+        return "定时更新"
+    parts = cron.split()
+    if len(parts) != 5:
+        return "定时更新"
+    minute, hour = parts[0], parts[1]
+    # "0 6,12,18,0 * * *"  → 每6小时
+    if ',' in hour:
+        count = len(hour.split(','))
+        interval = 24 // count
+        return f"每{interval}小时更新"
+    # "*/30 * * * *"  → 每30分钟
+    if minute.startswith('*/'):
+        n = minute[2:]
+        return f"每{n}分钟更新"
+    # "0 */6 * * *"  → 每6小时
+    if hour.startswith('*/'):
+        n = hour[2:]
+        return f"每{n}小时更新"
+    # "0 8 * * *"  → 每天
+    return "每天更新"
+
+
 def platforms_view(request):
     """
     GET /api/platforms/
-    
-    返回所有平台的元数据：标签、分组、最后抓取时间、文章总数。
+
+    返回所有平台的元数据：标签、分组、最后抓取时间、文章总数、更新频率。
     """
     if request.method != "GET":
         return HttpResponse(status=405)
 
     platform_groups = settings.PLATFORM_GROUPS
+    scheduler_config = getattr(settings, 'SCHEDULER_CONFIG', {})
 
     # 获取每个平台的最后抓取时间和文章数
     platform_stats = Info.objects.values("platform").annotate(
@@ -342,20 +423,204 @@ def platforms_view(request):
 
     stats_map = {s["platform"]: s for s in platform_stats}
 
+    # 构建 platform → cron 映射
+    # task_name 与 platform name 可能不同（如 hacker_news vs hackernews，github_trending_daily vs github）
+    # 使用显式别名表 + 前缀匹配双重查找
+    _TASK_PLATFORM_ALIAS = {
+        'hacker_news': 'hackernews',
+        'zaobao_hotlist': 'zaobao',
+        'github_trending_daily': 'github',
+        'github_trending_weekly': 'github',
+        'github_trending_monthly': 'github',
+    }
+    platform_cron_map: dict[str, str] = {}
+    for task_name, cfg in scheduler_config.items():
+        if not cfg.get('enabled', True):
+            continue
+        cron = cfg.get('cron', '')
+        # First: check explicit alias
+        aliased = _TASK_PLATFORM_ALIAS.get(task_name)
+        if aliased and aliased not in platform_cron_map:
+            platform_cron_map[aliased] = cron
+            continue
+        # Then: check if task_name matches a platform name directly or by prefix
+        for group_cfg in platform_groups.values():
+            for pname in group_cfg["platforms"]:
+                if task_name == pname or task_name.startswith(pname + '_'):
+                    if pname not in platform_cron_map:
+                        platform_cron_map[pname] = cron
+
     platforms = []
     for group_name, group_cfg in platform_groups.items():
         for platform_name in group_cfg["platforms"]:
             stats = stats_map.get(platform_name, {})
             last_fetch = stats.get("last_fetch")
+            cron = platform_cron_map.get(platform_name, '')
+            update_interval = _cron_to_interval_label(cron)
 
             platforms.append({
                 "name": platform_name,
                 "label": PLATFORM_LABELS.get(platform_name, platform_name),
                 "group": group_name,
-                "last_fetch": last_fetch.strftime("%Y-%m-%dT%H:%M:%S") if last_fetch else None,
+                "last_fetch": last_fetch.strftime("%Y-%m-%dT%H:%M:%S+00:00") if last_fetch else None,
                 "article_count": stats.get("article_count", 0),
+                "update_interval": update_interval,
             })
 
     return _json_response({
         "platforms": platforms,
     })
+
+
+# ── ranktime → 卡片标题映射 ────────────────────────────────────────────────────
+_RANKTIME_LABELS: dict[str, str] = {
+    "24hour":  "24小时热榜",
+    "48hour":  "48小时热榜",
+    "168hour": "周热榜",
+    "720hour": "月热榜",
+    "":        "热榜",
+}
+
+# ranktime 排序优先级（时间窗口由短到长）
+_RT_ORDER = ["24hour", "48hour", "168hour", "720hour", ""]
+
+# 超过此小时数认为数据陈旧（每天抓 4 次，正常间隔 6h，25h = 4 次全失败）
+_STALE_HOURS = 25
+
+
+def news_latest_view(request):
+    """
+    GET /api/news/latest/?platform={platform}
+
+    返回指定平台最近一次抓取的数据。
+    每个 (section分组 + ranktime) 彻底拆成独立卡片，返回平铺的 cards 列表。
+
+    分组规则：
+      - section != "hotlist" → 独立一张卡片，card_id="section"，card_title="平台名 · 首页资讯"
+      - section == "hotlist" → 按 ranktime 各自一张卡片，card_title="平台名 · 24小时热榜" 等
+    每张卡片内部：
+      - 按 URL 去重（保留最高 rank 的那条）
+      - 去重后重新按 1,2,3... 编号 index 字段
+
+    响应 card 结构：
+    {
+      "card_id":       "section" | "hotlist_24hour" | ...,
+      "card_title":    "FT中文网 · 首页资讯",
+      "platform":      "ftchinese",
+      "platform_label":"FT中文网",
+      "fetch_time":    "2026-09-03T06:00:00",
+      "fetch_age_hours": 2.5,
+      "is_stale":      false,
+      "articles": [
+        {"index": 1, "id": 123, "title": "...", "url": "...", "section": "...", "ranktime": "..."}
+      ]
+    }
+    """
+    if request.method != "GET":
+        return HttpResponse(status=405)
+
+    platform = request.GET.get("platform", "").strip()
+    if not platform:
+        return _error_response("platform 参数必填")
+
+    # 1. 取该平台最近一次抓取时间
+    from django.db.models import Max
+    agg = Info.objects.filter(platform=platform).aggregate(latest=Max("date"))
+    latest_date = agg.get("latest")
+
+    if latest_date is None:
+        return _error_response(f"平台 '{platform}' 暂无数据", status=404)
+
+    # 2. 时效性判断
+    now = timezone.now()
+    age_seconds = (now - latest_date).total_seconds()
+    fetch_age_hours = round(age_seconds / 3600, 1)
+    is_stale = fetch_age_hours > _STALE_HOURS
+
+    platform_label = PLATFORM_LABELS.get(platform, platform)
+    fetch_time_str = latest_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+
+    # 3. 取该批次全部记录，按 section / rank / id 排序
+    articles_qs = list(
+        Info.objects.filter(
+            platform=platform,
+            date=latest_date,
+        ).order_by("section", "rank", "id")
+    )
+
+    # 4. 分组：non_hotlist → section分组；hotlist → 按 ranktime 分
+    #    key: ("section", "") 或 ("hotlist", ranktime)
+    groups: dict[tuple[str, str], list] = {}
+
+    for article in articles_qs:
+        if article.section != "hotlist":
+            key = ("section", "")
+        else:
+            rt = article.ranktime or ""
+            key = ("hotlist", rt)
+        groups.setdefault(key, []).append(article)
+
+    # 5. 对每组做 URL 去重 + 重新编号
+    def _dedup_and_index(items: list) -> list[dict]:
+        seen_urls: set[str] = set()
+        result = []
+        for item in items:
+            url = (item.url or "").strip()
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            result.append({
+                "index":   len(result) + 1,   # 去重后重新编号
+                "id":      item.id,
+                "title":   item.title,
+                "url":     url,
+                "section": item.section,
+                "rank":    item.rank,
+                "ranktime": item.ranktime or "",
+            })
+        return result
+
+    # 6. 构建 cards，按固定顺序输出
+    def _card_meta(key: tuple[str, str]) -> tuple[str, str]:
+        """返回 (card_id, card_title)"""
+        group_type, rt = key
+        if group_type == "section":
+            return "section", f"{platform_label} · 首页资讯"
+        else:
+            label = _RANKTIME_LABELS.get(rt, f"热榜({rt})")
+            cid = f"hotlist_{rt}" if rt else "hotlist"
+            return cid, f"{platform_label} · {label}"
+
+    def _sort_key(key: tuple[str, str]) -> tuple[int, int]:
+        group_type, rt = key
+        g = 0 if group_type == "section" else 1
+        r = _RT_ORDER.index(rt) if rt in _RT_ORDER else len(_RT_ORDER)
+        return (g, r)
+
+    cards = []
+    for key in sorted(groups.keys(), key=_sort_key):
+        articles = _dedup_and_index(groups[key])
+        if not articles:
+            continue
+        card_id, card_title = _card_meta(key)
+        cards.append({
+            "card_id":        card_id,
+            "card_title":     card_title,
+            "platform":       platform,
+            "platform_label": platform_label,
+            "fetch_time":     fetch_time_str,
+            "fetch_age_hours": fetch_age_hours,
+            "is_stale":       is_stale,
+            "articles":       articles,
+        })
+
+    if not cards:
+        return _error_response(f"平台 '{platform}' 暂无数据", status=404)
+
+    if is_stale:
+        return _error_response(
+            f"平台 '{platform}' 数据已过期（{fetch_age_hours} 小时前）",
+            status=503,
+        )
+
+    return _json_response({"cards": cards})

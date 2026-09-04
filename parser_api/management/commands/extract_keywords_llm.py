@@ -59,6 +59,12 @@ class Command(BaseCommand):
             help="打印两阶段流程的提示词（阶段1提取 + 阶段2归纳）",
         )
         parser.add_argument(
+            "--stage2-only",
+            action="store_true",
+            default=False,
+            help="跳过阶段1，直接用已有缓存数据运行阶段2（等价于不带 --force 且缓存命中）",
+        )
+        parser.add_argument(
             "--v2",
             action="store_true",
             default=False,
@@ -91,9 +97,11 @@ class Command(BaseCommand):
 
         self.stdout.write(f"开始 LLM 短语提取 group={group} top={top} force={force} batch_size={batch_size or 'default'}")
 
-        if options.get("v2"):
+        if options.get("v2") or options.get("stage2_only"):
             self.stdout.write("使用两阶段流程 (v2)")
-            result = extract_keywords_llm_v2(group=group, top=top, force=force, batch_size=batch_size)
+            # --stage2-only: force=False so Stage 1 cache is used, skipping LLM calls for phrases
+            effective_force = force and not options.get("stage2_only")
+            result = extract_keywords_llm_v2(group=group, top=top, force=effective_force, batch_size=batch_size)
         else:
             result = extract_keywords_llm(group=group, top=top, force=force, batch_size=batch_size)
 

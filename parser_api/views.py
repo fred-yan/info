@@ -14,6 +14,10 @@ from news_homepage_parser.extractor.hacker_news import fetch_top_stories as hn_f
 from news_homepage_parser.extractor.zhihu import fetch_hot_list as zhihu_fetch_hot_list
 from news_homepage_parser.extractor.pengpai import fetch_hot_news as pengpai_fetch_hot_news
 from news_homepage_parser.extractor.weibo import fetch_hot_search as weibo_fetch_hot_search
+from news_homepage_parser.extractor.huxiu import fetch_article_list as huxiu_fetch_article_list
+from news_homepage_parser.extractor.jiqizhixin import fetch_articles as jiqizhixin_fetch_articles
+from news_homepage_parser.extractor.cls import fetch_hot_articles as cls_fetch_hot_articles
+from news_homepage_parser.extractor.wscn import fetch_hot_articles as wscn_fetch_hot_articles
 
 from .site_config import SITE_URLS
 from .models import Info
@@ -21,22 +25,9 @@ from .models import Info
 logger = logging.getLogger(__name__)
 
 
-def _parse_site_view(request, url: str) -> HttpResponse:
-    if request.method != "GET":
-        return HttpResponse(status=405)
-
-    t0 = time.monotonic()
-    try:
-        result = parse(url)
-    except Exception as exc:
-        logger.error("view unhandled error url=%s error=%s", url, exc, exc_info=True)
-        body = json.dumps({"error": str(exc)})
-        return HttpResponse(body, content_type="application/json", status=500)
-
-    status = 200 if result.error is None else 502
-    elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
-    return HttpResponse(to_json(result), content_type="application/json", status=status)
+def _now_minute() -> object:
+    """返回截断到分钟的当前时间，保证同批次所有记录 date 完全一致。"""
+    return timezone.now().replace(second=0, microsecond=0)
 
 
 def economist_view(request):
@@ -55,8 +46,7 @@ def economist_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -125,8 +115,7 @@ def apnews_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -189,8 +178,7 @@ def ftchinese_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None and result.items:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -241,8 +229,7 @@ def wsj_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None and result.items:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -293,8 +280,7 @@ def kr36_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None and result.items:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -333,28 +319,20 @@ def huxiu_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
-    url = SITE_URLS["huxiu"]
     t0 = time.monotonic()
     try:
-        result = parse(url)
+        items = huxiu_fetch_article_list(page_size=20)
     except Exception as exc:
-        logger.error("view unhandled error url=%s error=%s", url, exc, exc_info=True)
+        logger.error("huxiu_view unhandled error: %s", exc, exc_info=True)
         body = json.dumps({"error": str(exc)})
         return HttpResponse(body, content_type="application/json", status=500)
 
-    # 如果解析成功且没有错误，将数据存入数据库
-    if result.error is None and result.items:
+    if items:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
-            
+            fetch_time = _now_minute()
             info_objects = []
-            
-            # 保存 items（hotlist 和 section_1）
-            for item in result.items:
-                # 如果有 detail 字段，序列化为 JSON 字符串
+            for item in items:
                 detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                
                 info_objects.append(Info(
                     title=item.title,
                     url=item.link,
@@ -363,17 +341,260 @@ def huxiu_view(request):
                     section=item.section or "",
                     rank=item.rank,
                     detail=detail_str,
-                    ranktime=item.ranktime or ""
+                    ranktime=item.ranktime or "",
                 ))
-            
-            # 批量插入数据库
-            if info_objects:
-                close_old_connections()
-                Info.objects.bulk_create(info_objects)
-                logger.info("huxiu saved to db items=%d", len(info_objects))
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("huxiu saved to db items=%d", len(info_objects))
         except Exception as db_exc:
             logger.error("huxiu db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
+
+    elapsed = time.monotonic() - t0
+    status = 200 if items else 502
+    logger.info("huxiu_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
+    result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
+    return HttpResponse(result_body, content_type="application/json", status=status)
+
+
+def wscn_view(request):
+    """华尔街见闻最热文章：直接调 awtmt.com API，无需 Playwright。"""
+    if request.method != "GET":
+        return HttpResponse(status=405)
+
+    t0 = time.monotonic()
+    try:
+        items = wscn_fetch_hot_articles()
+    except Exception as exc:
+        logger.error("wscn_view unhandled error: %s", exc, exc_info=True)
+        body = json.dumps({"error": str(exc)})
+        return HttpResponse(body, content_type="application/json", status=500)
+
+    if items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [
+                Info(
+                    title=item.title,
+                    url=item.link,
+                    platform="wscn",
+                    date=fetch_time,
+                    section=item.section or "",
+                    rank=item.rank,
+                    detail=json.dumps(item.detail, ensure_ascii=False) if item.detail else "",
+                    ranktime=item.ranktime or "",
+                )
+                for item in items
+            ]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("wscn saved to db items=%d", len(info_objects))
+        except Exception as db_exc:
+            logger.error("wscn db save error: %s", db_exc, exc_info=True)
+
+    elapsed = time.monotonic() - t0
+    status = 200 if items else 502
+    logger.info("wscn_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
+    result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
+    return HttpResponse(result_body, content_type="application/json", status=status)
+
+
+def cls_view(request):
+    """财联社热门文章排行榜：直接 HTTP 请求首页 HTML，无需 Playwright。"""
+    if request.method != "GET":
+        return HttpResponse(status=405)
+
+    t0 = time.monotonic()
+    try:
+        items = cls_fetch_hot_articles()
+    except Exception as exc:
+        logger.error("cls_view unhandled error: %s", exc, exc_info=True)
+        body = json.dumps({"error": str(exc)})
+        return HttpResponse(body, content_type="application/json", status=500)
+
+    if items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [
+                Info(
+                    title=item.title,
+                    url=item.link,
+                    platform="cls",
+                    date=fetch_time,
+                    section=item.section or "",
+                    rank=item.rank,
+                    detail="",
+                    ranktime=item.ranktime or "",
+                )
+                for item in items
+            ]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("cls saved to db items=%d", len(info_objects))
+        except Exception as db_exc:
+            logger.error("cls db save error: %s", db_exc, exc_info=True)
+
+    elapsed = time.monotonic() - t0
+    status = 200 if items else 502
+    logger.info("cls_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
+    result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
+    return HttpResponse(result_body, content_type="application/json", status=status)
+
+
+def jiqizhixin_view(request):
+    """机器之心文章库：直接调内部 API，无需 Playwright。"""
+    if request.method != "GET":
+        return HttpResponse(status=405)
+
+    t0 = time.monotonic()
+    try:
+        items = jiqizhixin_fetch_articles(page_size=15)
+    except Exception as exc:
+        logger.error("jiqizhixin_view unhandled error: %s", exc, exc_info=True)
+        body = json.dumps({"error": str(exc)})
+        return HttpResponse(body, content_type="application/json", status=500)
+
+    if items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [
+                Info(
+                    title=item.title,
+                    url=item.link,
+                    platform="jiqizhixin",
+                    date=fetch_time,
+                    section=item.section or "",
+                    rank=item.rank,
+                    detail=json.dumps(item.detail, ensure_ascii=False) if item.detail else "",
+                    ranktime=item.ranktime or "",
+                )
+                for item in items
+            ]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("jiqizhixin saved to db items=%d", len(info_objects))
+        except Exception as db_exc:
+            logger.error("jiqizhixin db save error: %s", db_exc, exc_info=True)
+
+    elapsed = time.monotonic() - t0
+    status = 200 if items else 502
+    logger.info("jiqizhixin_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
+    result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
+    return HttpResponse(result_body, content_type="application/json", status=status)
+
+
+def theverge_view(request):
+    if request.method != "GET":
+        return HttpResponse(status=405)
+    url = SITE_URLS["theverge"]
+    t0 = time.monotonic()
+    try:
+        result = parse(url)
+    except Exception as exc:
+        logger.error("theverge view error: %s", exc, exc_info=True)
+        return HttpResponse(json.dumps({"error": str(exc)}), content_type="application/json", status=500)
+    if result.error is None and result.items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [Info(title=i.title, url=i.link, platform="theverge", date=fetch_time,
+                                 section=i.section or "", rank=i.rank, detail="", ranktime=i.ranktime or "")
+                            for i in result.items]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("theverge saved to db items=%d", len(info_objects))
+        except Exception as e:
+            logger.error("theverge db error: %s", e, exc_info=True)
+    status = 200 if result.error is None else 502
+    logger.info("theverge_view status=%d elapsed=%.1fs", status, time.monotonic() - t0)
+    return HttpResponse(to_json(result), content_type="application/json", status=status)
+
+
+def techcrunch_view(request):
+    if request.method != "GET":
+        return HttpResponse(status=405)
+    url = SITE_URLS["techcrunch"]
+    t0 = time.monotonic()
+    try:
+        result = parse(url)
+    except Exception as exc:
+        logger.error("techcrunch view error: %s", exc, exc_info=True)
+        return HttpResponse(json.dumps({"error": str(exc)}), content_type="application/json", status=500)
+    if result.error is None and result.items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [Info(title=i.title, url=i.link, platform="techcrunch", date=fetch_time,
+                                 section=i.section or "", rank=i.rank, detail="", ranktime=i.ranktime or "")
+                            for i in result.items]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("techcrunch saved to db items=%d", len(info_objects))
+        except Exception as e:
+            logger.error("techcrunch db error: %s", e, exc_info=True)
+    status = 200 if result.error is None else 502
+    logger.info("techcrunch_view status=%d elapsed=%.1fs", status, time.monotonic() - t0)
+    return HttpResponse(to_json(result), content_type="application/json", status=status)
+
+
+def mittr_view(request):
+    if request.method != "GET":
+        return HttpResponse(status=405)
+    url = SITE_URLS["mittr"]
+    t0 = time.monotonic()
+    try:
+        result = parse(url)
+    except Exception as exc:
+        logger.error("mittr view error: %s", exc, exc_info=True)
+        return HttpResponse(json.dumps({"error": str(exc)}), content_type="application/json", status=500)
+    if result.error is None and result.items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [Info(title=i.title, url=i.link, platform="mittr", date=fetch_time,
+                                 section=i.section or "", rank=i.rank, detail="", ranktime=i.ranktime or "")
+                            for i in result.items]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("mittr saved to db items=%d", len(info_objects))
+        except Exception as e:
+            logger.error("mittr db error: %s", e, exc_info=True)
+    status = 200 if result.error is None else 502
+    logger.info("mittr_view status=%d elapsed=%.1fs", status, time.monotonic() - t0)
+    return HttpResponse(to_json(result), content_type="application/json", status=status)
+
+
+def tmtpost_view(request):
+    """钛媒体热文榜：Playwright 抓取，wait_after=6s 等 JS 渲染。"""
+    if request.method != "GET":
+        return HttpResponse(status=405)
+
+    url = SITE_URLS["tmtpost"]
+    t0 = time.monotonic()
+    try:
+        result = parse(url)
+    except Exception as exc:
+        logger.error("view unhandled error url=%s error=%s", url, exc, exc_info=True)
+        body = json.dumps({"error": str(exc)})
+        return HttpResponse(body, content_type="application/json", status=500)
+
+    if result.error is None and result.items:
+        try:
+            fetch_time = _now_minute()
+            info_objects = [
+                Info(
+                    title=item.title,
+                    url=item.link,
+                    platform="tmtpost",
+                    date=fetch_time,
+                    section=item.section or "",
+                    rank=item.rank,
+                    detail=json.dumps(item.detail, ensure_ascii=False) if item.detail else "",
+                    ranktime=item.ranktime or "",
+                )
+                for item in result.items
+            ]
+            close_old_connections()
+            Info.objects.bulk_create(info_objects)
+            logger.info("tmtpost saved to db items=%d", len(info_objects))
+        except Exception as db_exc:
+            logger.error("tmtpost db save error: %s", db_exc, exc_info=True)
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -397,8 +618,7 @@ def wst_post_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -467,8 +687,7 @@ def zaobao_view(request):
     # 如果解析成功且没有错误，将数据存入数据库
     if result.error is None and result.items:
         try:
-            # 将 fetched_at 转换为 Django 的 timezone-aware datetime
-            fetch_time = timezone.make_aware(result.fetched_at) if timezone.is_naive(result.fetched_at) else result.fetched_at
+            fetch_time = _now_minute()
             
             info_objects = []
             
@@ -523,7 +742,7 @@ def github_trending_view(request):
         from datetime import datetime, timezone as dt_timezone
         
         # 创建当前时间戳
-        fetch_time = django_timezone.now()
+        fetch_time = _now_minute()
         
         info_objects = []
         
@@ -595,7 +814,7 @@ def zaobao_hotlist_view(request):
 
     # 保存数据到数据库
     try:
-        fetch_time = timezone.now()
+        fetch_time = _now_minute()
         info_objects = []
 
         for item in all_items:
@@ -656,7 +875,7 @@ def hacker_news_top_stories_view(request):
     
     # 保存数据到数据库
     try:
-        fetch_time = timezone.now()
+        fetch_time = _now_minute()
         info_objects = []
         
         # 保存 items（hotlist，带 ranktime）
@@ -717,7 +936,7 @@ def zhihu_view(request):
     
     # 保存数据到数据库
     try:
-        fetch_time = timezone.now()
+        fetch_time = _now_minute()
         info_objects = []
         
         # 保存 items（hotlist，带 ranktime）
@@ -778,7 +997,7 @@ def pengpai_view(request):
     
     # 保存数据到数据库
     try:
-        fetch_time = timezone.now()
+        fetch_time = _now_minute()
         info_objects = []
         
         # 保存 items（hotlist，带 ranktime）
@@ -839,7 +1058,7 @@ def weibo_view(request):
     
     # 保存数据到数据库
     try:
-        fetch_time = timezone.now()
+        fetch_time = _now_minute()
         info_objects = []
         
         # 保存 items（hotlist，带 ranktime）

@@ -41,6 +41,8 @@ export interface ArticleDetail {
   platform: string;
   section: string;
   date: string; // ISO 8601
+  rank?: number | null;
+  ranktime?: string;
 }
 
 export interface ArticlesResponse {
@@ -54,6 +56,7 @@ export interface PlatformMetadata {
   group: 'domestic' | 'international';
   last_fetch: string; // ISO 8601
   article_count: number;
+  update_interval: string; // e.g. "每6小时更新"
 }
 
 export interface NewsFeedResponse {
@@ -106,7 +109,50 @@ export interface PlatformArticleGroup {
   count: number;
 }
 
-export interface FeedFilters {
-  platforms: string[];
-  section: string | null;
+// === Multi-Platform Page Types ===
+
+export type PlatformGroup = 'domestic' | 'international';
+
+export interface PlatformFeedResult {
+  articles: ArticleDetail[];
+  loading: boolean;
+  error: string | null;
+}
+
+// === Platform Latest Types ===
+
+/** 单条新闻条目（来自 news/latest/ 接口） */
+export interface LatestArticle {
+  index: number;        // 去重后重新编号，从 1 开始
+  id: number;
+  title: string;
+  url: string;
+  section: string;
+  rank: number | null;
+  ranktime: string;
+}
+
+/** 一张独立卡片（对应某平台的某个 section/ranktime 分组） */
+export interface ArticleCard {
+  card_id: string;          // e.g. "section" | "hotlist_24hour"
+  card_title: string;       // e.g. "FT中文网 · 首页资讯"
+  platform: string;
+  platform_label: string;
+  fetch_time: string;       // ISO 8601，截断到分钟
+  fetch_age_hours: number;
+  is_stale: boolean;
+  articles: LatestArticle[];
+  update_interval?: string; // e.g. "每6小时更新"，从 platforms 元数据注入
+}
+
+/** /api/news/latest/ 返回结构 */
+export interface PlatformLatestResponse {
+  cards: ArticleCard[];
+}
+
+export interface UsePlatformLatestResult {
+  data: PlatformLatestResponse | null;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
 }

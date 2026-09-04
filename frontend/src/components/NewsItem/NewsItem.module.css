@@ -1,0 +1,64 @@
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 4px;
+  transition: background 0.12s;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.04));
+}
+
+.rank {
+  flex-shrink: 0;
+  width: 1.4rem;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--rank-color, #9ca3af);
+  line-height: 1.5;
+}
+
+/* Top 3 ranks get accent color */
+.rankTop {
+  color: var(--accent, #2563eb);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text, #374151);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item:hover .title {
+  color: var(--text-h, #111827);
+  text-decoration: underline;
+  text-decoration-color: var(--border, #e5e7eb);
+  text-underline-offset: 2px;
+}
+
+.section {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: var(--accent-bg, rgba(37, 99, 235, 0.08));
+  color: var(--accent, #2563eb);
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .item:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
