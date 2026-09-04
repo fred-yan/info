@@ -131,20 +131,6 @@ log_ok "备份完成（$BACKED_UP 个文件 → $BACKUP_DIR）"
 # ── Step 2: 拉取最新代码 ──────────────────────────────────────────────────────
 log_info "Step 2: 从 GitHub 拉取最新代码..."
 
-# 检查是否有未提交的本地变更（排除配置文件）
-DIRTY_FILES=$(git status --porcelain | grep -v "^??" | grep -v "db_config.ini" \
-    | grep -v "llm_config.ini" | grep -v ".env" || true)
-
-if [[ -n "$DIRTY_FILES" ]]; then
-    log_warn "检测到未提交的本地变更:"
-    echo "$DIRTY_FILES"
-    log_warn "将暂存 (stash) 后继续..."
-    git stash push -m "deploy-stash-$(date +%Y%m%d_%H%M%S)"
-    STASHED=true
-else
-    STASHED=false
-fi
-
 BEFORE_COMMIT=$(git rev-parse HEAD)
 git fetch origin main
 git reset --hard origin/main
@@ -173,11 +159,6 @@ for cfg in "${LOCAL_CONFIGS[@]}"; do
         log_ok "  已还原: $cfg"
     fi
 done
-
-# 还原 git stash（如果之前做了 stash）
-if [[ "$STASHED" == "true" ]]; then
-    git stash pop || log_warn "stash pop 失败，请手动处理: git stash pop"
-fi
 
 # ── Step 4: 安装/更新 Python 依赖 ─────────────────────────────────────────────
 log_info "Step 4: 更新 Python 依赖..."
@@ -237,7 +218,7 @@ else
         fi
 
         cd "$DEPLOY_DIR"
-        log_ok "前端构建完成（dist/ 已更新）"
+log_ok "前端构建完成（dist/ 已更新）"
     fi
 fi
 
