@@ -1,218 +1,107 @@
 # 定时任务实现总结
 
-## 已完成的工作
+## 核心文件
 
-### 1. 核心文件创建
+| 文件 | 说明 |
+|------|------|
+| `parser_api/scheduler.py` | 调度器核心：任务注册、批次计数、LLM 动态触发 |
+| `parser_api/apps.py` | Django 应用配置，随服务启动自动初始化调度器 |
+| `parser_api/management/commands/run_all_tasks.py` | 手动一次性执行所有任务 |
+| `parser_api/management/commands/run_scheduler.py` | 独立进程运行调度器 |
+| `django_api/settings.py` | `SCHEDULER_CONFIG` 平台任务配置 |
 
-✅ **parser_api/scheduler.py** - 调度器核心逻辑
-- `fetch_task_wrapper()` - 任务包装器，调用对应平台的 view 函数
-- `setup_scheduler()` - 初始化并启动调度器
-- `shutdown_scheduler()` - 优雅关闭调度器
-- `get_scheduler_status()` - 获取调度器状态
-
-✅ **parser_api/apps.py** - Django 应用配置
-- 在应用启动时自动初始化调度器
-- 避免在 migrate 等命令时启动
-
-✅ **parser_api/management/commands/run_scheduler.py** - 独立运行命令
-- 支持独立进程运行调度器
-- 信号处理，支持优雅停止
-- 显示已注册任务列表
-
-✅ **parser_api/management/commands/run_all_tasks.py** - 立即执行所有任务
-- 立即执行所有配置的任务一次后退出
-- 支持指定平台过滤（--platform）
-- 支持排除特定任务（--exclude）
-- 默认排除耗时过长的任务（keyword_analysis_llm）
-- 支持 --include-all 忽略默认排除
-- 支持并行执行（--parallel）
-- 显示执行进度和统计信息
-
-### 2. 配置文件更新
-
-✅ **django_api/settings.py** - 添加调度器配置
-- `SCHEDULER_ENABLED` - 启用/禁用开关
-- `SCHEDULER_TIMEZONE` - 时区设置
-- `SCHEDULER_CONFIG` - 14个平台的定时任务配置
-
-✅ **requirements.txt** - 添加依赖
-- apscheduler==3.10.4
-
-### 3. API 接口
-
-✅ **parser_api/views.py** - 添加状态查看接口
-- `scheduler_status_view()` - 查看调度器状态和任务列表
-
-✅ **parser_api/urls.py** - 添加路由
-- `/api/scheduler/status/` - 调度器状态接口
-
-### 4. 文档
-
-✅ **SCHEDULER_README.md** - 详细使用说明
-- 配置说明
-- 使用方式
-- 监控管理
-- 故障排查
-- 生产环境部署建议
-
-## 功能特性
-
-### 1. 灵活配置
-- 支持类似 crontab 的表达式
-- 每个平台可独立配置抓取频率
-- 支持启用/禁用单个任务
-- 支持传递额外参数（如 since）
-
-### 2. 可靠性
-- 任务不重叠执行（max_instances=1）
-- 异常捕获和日志记录
-- 优雅启动和关闭
-- 信号处理支持
-
-### 3. 监控管理
-- 详细的执行日志
-- 状态查看 API
-- 下次执行时间显示
-- 任务列表查看
-
-### 4. 部署灵活
-- 随 Django 应用启动
-- 独立进程运行
-- 支持 systemd/supervisor 管理
+---
 
 ## 已配置的任务
 
-| 平台 | Cron 表达式 | 频率 | 状态 |
-|------|------------|------|------|
-| economist | 0 */6 * * * | 每6小时 | ✅ |
-| apnews | 0 */4 * * * | 每4小时 | ✅ |
-| ftchinese | */30 * * * * | 每30分钟 | ✅ |
-| wsj | 0 */4 * * * | 每4小时 | ✅ |
-| kr36 | */30 * * * * | 每30分钟 | ✅ |
-| huxiu | */30 * * * * | 每30分钟 | ✅ |
-| zaobao | 0 */4 * * * | 每4小时 | ✅ |
-| zaobao_hotlist | */30 * * * * | 每30分钟 | ✅ |
-| github_trending | 0 */6 * * * | 每6小时 | ✅ |
-| hacker_news | */30 * * * * | 每30分钟 | ✅ |
-| zhihu | */30 * * * * | 每30分钟 | ✅ |
-| weibo | */30 * * * * | 每30分钟 | ✅ |
-| pengpai | */30 * * * * | 每30分钟 | ✅ |
-| washingtonpost | 0 */6 * * * | 每6小时 | ✅ |
+### ✅ 启用平台 — 每天 4 次（北京时间 00:00 / 06:00 / 12:00 / 18:00）
 
-## 测试结果
+Cron 表达式：`0 6,12,18,0 * * *`
 
-✅ **调度器启动测试**
-```
-[Scheduler] Scheduler started successfully with 14 tasks
-```
+**国内平台**
 
-✅ **任务注册测试**
-- 所有14个平台任务成功注册
-- 下次执行时间正确计算
+| 平台 | 说明 | 抓取方式 |
+|------|------|---------|
+| ftchinese | FT中文网 | Playwright |
+| kr36 | 36氪 | Playwright |
+| tmtpost | 钛媒体 | Playwright |
+| jiqizhixin | 机器之心 | HTTP API |
+| cls | 财联社 | HTTP + BeautifulSoup |
+| wscn | 华尔街见闻 | HTTP API |
+| huxiu | 虎嗅 | HTTP API（绕过阿里云WAF）|
+| zaobao | 联合早报 | Playwright |
+| zaobao_hotlist | 联合早报热榜 | HTTP API |
+| zhihu | 知乎 | HTTP API |
+| weibo | 微博 | HTTP API |
+| pengpai | 澎湃新闻 | HTTP API |
 
-✅ **依赖安装测试**
-- apscheduler 3.10.4 安装成功
-- 所有依赖包正常
+**国际平台**
 
-## 使用示例
+| 平台 | 说明 | 抓取方式 |
+|------|------|---------|
+| economist | The Economist | Playwright |
+| apnews | AP News | Playwright |
+| theverge | The Verge | Playwright |
+| techcrunch | TechCrunch | Playwright |
+| mittr | MIT Technology Review | Playwright + 正则解析内联JSON |
+| github_trending_daily | GitHub Trending 日榜 | HTTP API |
+| github_trending_weekly | GitHub Trending 周榜 | HTTP API |
+| github_trending_monthly | GitHub Trending 月榜 | HTTP API |
+| hacker_news | Hacker News | HTTP API |
 
-### 启动调度器（方式1 - 随应用启动）
-```bash
-./.venv/Scripts/python manage.py runserver
-```
+### ❌ 禁用平台
 
-### 启动调度器（方式2 - 独立运行）
-```bash
-./.venv/Scripts/python manage.py run_scheduler
-```
+| 平台 | 禁用原因 |
+|------|---------|
+| wsj | cn.wsj.com 需要付费订阅，RSS 已关闭 |
+| washingtonpost | 反爬较强，需要进一步调试 |
+| keyword_analysis | 已弃用，被 LLM 两阶段方案取代 |
+| keyword_analysis_llm（cron） | 改为由抓取完成后动态触发，不走固定时间 |
 
-### 立即执行所有任务一次
-```bash
-# 顺序执行所有任务（默认排除 keyword_analysis_llm）
-./.venv/Scripts/python manage.py run_all_tasks
+---
 
-# 并行执行（更快）
-./.venv/Scripts/python manage.py run_all_tasks --parallel
+## LLM 关键词分析触发机制
 
-# 只执行指定平台
-./.venv/Scripts/python manage.py run_all_tasks --platform weibo,zhihu
+**不走固定 cron**，通过批次完成计数动态触发：
 
-# 排除额外任务
-./.venv/Scripts/python manage.py run_all_tasks --exclude hacker_news
+1. 每批抓取开始时记录总任务数
+2. 每个抓取任务完成后计数 +1
+3. 当 done == total 时，**延迟 5 分钟**自动注入 LLM 分析任务
+4. 若 15 分钟后 LLM 分析仍未触发（某任务卡死），**强制执行兜底**
 
-# 包含所有任务（忽略默认排除）
-./.venv/Scripts/python manage.py run_all_tasks --include-all
-```
+实际执行时间约为 00:15、06:15、12:15、18:15 前后。
 
-### 单独运行 LLM 关键词分析
-```bash
-# LLM 分析耗时较长，需单独运行
-./.venv/Scripts/python manage.py extract_keywords_llm
-```
+---
 
-### 查看调度器状态
-```bash
+## 常用命令
+
+```powershell
+# 启动后端（含调度器）
+.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8000
+
+# 手动执行所有平台（并行）
+.venv\Scripts\python.exe manage.py run_all_tasks --parallel
+
+# 手动执行指定平台
+.venv\Scripts\python.exe manage.py run_all_tasks --platform ftchinese,kr36
+
+# 手动触发 LLM 关键词分析
+.venv\Scripts\python.exe manage.py extract_keywords_llm --v2 --group domestic --force
+.venv\Scripts\python.exe manage.py extract_keywords_llm --v2 --group international --force
+
+# 只跑阶段2（复用缓存的阶段1结果）
+.venv\Scripts\python.exe manage.py extract_keywords_llm --v2 --stage2-only --group domestic
+
+# 查看调度器状态
 curl http://localhost:8000/api/scheduler/status/
 ```
 
-### 修改配置
-编辑 `django_api/settings.py` 中的 `SCHEDULER_CONFIG`
+---
 
-### 禁用某个任务
-```python
-'weibo': {
-    'cron': '*/30 * * * *',
-    'enabled': False,  # 设置为 False
-},
-```
+## 功能特性
 
-## 日志示例
-
-```
-[2026-03-09 20:45:53] [INFO] [parser_api.scheduler] [Scheduler] Task registered: economist cron=0 */6 * * *
-[2026-03-09 20:45:53] [INFO] [parser_api.scheduler] [Scheduler] Scheduler started successfully with 14 tasks
-[2026-03-09 21:00:00] [INFO] [parser_api.scheduler] [Scheduler] Starting task: weibo
-[2026-03-09 21:00:05] [INFO] [parser_api.scheduler] [Scheduler] Task completed: weibo (elapsed=5.2s)
-```
-
-## 下一步建议
-
-### 可选增强功能
-
-1. **任务执行历史记录**
-   - 创建数据库表记录任务执行历史
-   - 记录执行时间、状态、耗时等
-
-2. **失败重试机制**
-   - 配置失败重试次数
-   - 指数退避策略
-
-3. **任务优先级**
-   - 为不同平台设置优先级
-   - 资源紧张时优先执行重要任务
-
-4. **动态配置更新**
-   - 支持通过 API 动态修改任务配置
-   - 无需重启即可生效
-
-5. **监控告警**
-   - 任务失败告警
-   - 执行时间过长告警
-   - 集成钉钉/企业微信通知
-
-6. **性能优化**
-   - 任务并发控制
-   - 数据库连接池优化
-   - 缓存机制
-
-## 总结
-
-定时任务功能已完整实现并测试通过。系统现在可以：
-
-✅ 自动定时抓取14个平台的新闻数据
-✅ 灵活配置每个平台的抓取频率
-✅ 监控任务执行状态
-✅ 记录详细的执行日志
-✅ 支持多种部署方式
-
-所有功能已就绪，可以投入使用！
+- **任务不重叠**：`max_instances=1`，同一任务不会并发执行
+- **统一频率**：所有平台每天4次，保证热点分析数据新鲜度一致
+- **异常隔离**：单个平台失败不影响其他平台和后续 LLM 分析
+- **数据库连接**：每次任务执行前调用 `close_old_connections()` 防止长连接超时
+- **日志完整**：每个任务记录开始时间、耗时、成功/失败状态
