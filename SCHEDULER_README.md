@@ -2,38 +2,30 @@
 
 ## 概述
 
-本项目使用 APScheduler 实现定时抓取新闻数据的功能。调度器支持类似 crontab 的配置格式，可以灵活配置每个平台的抓取频率。
+本项目使用 APScheduler 实现定时抓取新闻数据的功能。所有启用的平台统一每天抓取 4 次（北京时间 00:00 / 06:00 / 12:00 / 18:00），抓取完成后自动触发 LLM 关键词分析。
 
 ## 配置说明
 
-### 1. 启用/禁用调度器
-
-在 `django_api/settings.py` 中设置：
+### 启用/禁用调度器
 
 ```python
-SCHEDULER_ENABLED = True  # True 启用，False 禁用
+# django_api/settings.py
+SCHEDULER_ENABLED = True
+SCHEDULER_TIMEZONE = 'Asia/Shanghai'
 ```
 
-### 2. 配置时区
-
-```python
-SCHEDULER_TIMEZONE = 'Asia/Shanghai'  # 设置调度器时区
-```
-
-### 3. 配置定时任务
-
-在 `SCHEDULER_CONFIG` 中配置各平台的抓取任务：
+### 任务配置格式
 
 ```python
 SCHEDULER_CONFIG = {
-    'economist': {
-        'cron': '0 */6 * * *',  # cron 表达式
-        'enabled': True,         # 是否启用此任务
-    },
-    'zaobao_hotlist': {
-        'cron': '*/30 * * * *',
+    'ftchinese': {
+        'cron': '0 6,12,18,0 * * *',  # 每天 00/06/12/18 点
         'enabled': True,
-        'params': {'since': 'day'},  # 额外参数
+    },
+    'github_trending_daily': {
+        'cron': '0 6,12,18,0 * * *',
+        'enabled': True,
+        'params': {'since': 'daily'},  # 额外参数
     },
 }
 ```
@@ -42,238 +34,130 @@ SCHEDULER_CONFIG = {
 
 格式：`分 时 日 月 周`
 
-示例：
-- `*/30 * * * *` - 每30分钟执行一次
-- `0 */6 * * *` - 每6小时执行一次（0点、6点、12点、18点）
-- `0 8 * * *` - 每天8点执行
-- `0 0 * * 0` - 每周日0点执行
-- `0 0 1 * *` - 每月1号0点执行
+| 示例 | 含义 |
+|------|------|
+| `0 6,12,18,0 * * *` | 每天 00/06/12/18 点（当前所有平台的配置）|
+| `*/30 * * * *` | 每30分钟 |
+| `0 */6 * * *` | 每6小时 |
+| `0 8 * * *` | 每天8点 |
 
-字段说明：
-- 分钟：0-59
-- 小时：0-23
-- 日：1-31
-- 月：1-12
-- 周：0-6（0表示周日）
+## 支持的平台
 
-特殊字符：
-- `*` - 任意值
-- `*/n` - 每n个单位
-- `n-m` - 范围
-- `n,m` - 列表
+### ✅ 启用平台（每天 00:00 / 06:00 / 12:00 / 18:00）
+
+**国内**
+
+| 平台名 | 说明 | 抓取方式 |
+|--------|------|---------|
+| ftchinese | FT中文网 | Playwright |
+| kr36 | 36氪 | Playwright |
+| tmtpost | 钛媒体 | Playwright |
+| jiqizhixin | 机器之心 | HTTP API |
+| cls | 财联社 | HTTP + BS4 |
+| wscn | 华尔街见闻 | HTTP API |
+| huxiu | 虎嗅 | HTTP API |
+| zaobao | 联合早报 | Playwright |
+| zaobao_hotlist | 联合早报热榜 | HTTP API |
+| zhihu | 知乎 | HTTP API |
+| weibo | 微博 | HTTP API |
+| pengpai | 澎湃新闻 | HTTP API |
+
+**国际**
+
+| 平台名 | 说明 | 抓取方式 |
+|--------|------|---------|
+| economist | The Economist | Playwright |
+| apnews | AP News | Playwright |
+| theverge | The Verge | Playwright |
+| techcrunch | TechCrunch | Playwright |
+| mittr | MIT Technology Review | Playwright |
+| github_trending_daily/weekly/monthly | GitHub Trending | HTTP API |
+| hacker_news | Hacker News | HTTP API |
+
+### ❌ 禁用平台
+
+| 平台名 | 禁用原因 |
+|--------|---------|
+| wsj | 需要付费订阅 |
+| washingtonpost | 反爬较强 |
+| keyword_analysis | 已弃用（被 LLM 方案取代）|
+| keyword_analysis_llm（cron）| 改为由抓取完成后动态触发 |
+
+## LLM 关键词分析触发
+
+**不走固定 cron**，通过批次完成计数动态触发：
+
+1. 批次开始时记录总任务数
+2. 每个任务完成后计数 +1
+3. 全部完成 → **延迟 5 分钟**自动触发 LLM 分析
+4. 超过 **15 分钟**未完成 → 强制兜底触发
+
+实际执行约在 00:15 / 06:15 / 12:15 / 18:15 前后。
 
 ## 使用方式
 
 ### 方式1：随 Django 应用启动（推荐）
 
-调度器会在 Django 应用启动时自动初始化：
-
 ```bash
-./.venv/Scripts/python manage.py runserver
+.venv\Scripts\python.exe manage.py runserver 0.0.0.0:8000
 ```
 
-启动后会看到类似日志：
+调度器随应用自动启动，日志示例：
 ```
-[ParserApiConfig] Scheduler initialized
-[Scheduler] Task registered: economist cron=0 */6 * * *
-[Scheduler] Task registered: weibo cron=*/30 * * * *
-[Scheduler] Scheduler started successfully with 14 tasks
+[Scheduler] Task registered: ftchinese cron=0 6,12,18,0 * * *
+[Scheduler] Scheduler started successfully with 21 tasks
 ```
 
 ### 方式2：独立运行调度器
 
-适合在生产环境中作为独立进程运行：
+```bash
+.venv\Scripts\python.exe manage.py run_scheduler
+```
+
+### 方式3：手动触发所有任务
 
 ```bash
-./.venv/Scripts/python manage.py run_scheduler
+# 并行执行所有启用平台
+.venv\Scripts\python.exe manage.py run_all_tasks --parallel
+
+# 只执行指定平台
+.venv\Scripts\python.exe manage.py run_all_tasks --platform ftchinese,kr36
 ```
 
-输出示例：
-```
-Starting scheduler...
-Scheduler is running. Press Ctrl+C to exit.
-
-Registered 14 tasks:
-  - Fetch economist: next run at 2026-03-09 18:00:00
-  - Fetch weibo: next run at 2026-03-09 14:30:00
-  - Fetch zhihu: next run at 2026-03-09 14:30:00
-  ...
-```
-
-按 `Ctrl+C` 可优雅停止调度器。
-
-### 方式3：立即执行所有任务一次
-
-适合手动触发全量抓取或测试：
+## 监控
 
 ```bash
-# 执行所有启用的任务
-./.venv/Scripts/python manage.py run_all_tasks
-
-# 只执行指定平台的任务
-./.venv/Scripts/python manage.py run_all_tasks --platform weibo,zhihu
-
-# 并行执行（更快，但占用更多资源）
-./.venv/Scripts/python manage.py run_all_tasks --parallel
-```
-
-输出示例：
-```
-Running 14 tasks...
-
-[1/14] Running: economist
-  ✓ Completed in 5.2s
-
-[2/14] Running: weibo
-  ✓ Completed in 3.8s
-
-...
-
-============================================================
-Total: 14 tasks
-Success: 13
-Failed: 1
-Total time: 125.3s
-============================================================
-```
-
-## 监控和管理
-
-### 查看调度器状态
-
-访问 API 端点：
-
-```bash
+# 查看调度器状态和下次执行时间
 curl http://localhost:8000/api/scheduler/status/
-```
 
-返回示例：
-```json
-{
-  "status": "running",
-  "timezone": "Asia/Shanghai",
-  "jobs": [
-    {
-      "id": "fetch_economist",
-      "name": "Fetch economist",
-      "next_run": "2026-03-09T18:00:00+08:00",
-      "trigger": "cron[hour='*/6', minute='0']"
-    },
-    {
-      "id": "fetch_weibo",
-      "name": "Fetch weibo",
-      "next_run": "2026-03-09T14:30:00+08:00",
-      "trigger": "cron[minute='*/30']"
-    }
-  ]
-}
-```
-
-### 查看执行日志
-
-日志会输出到 `logs/app.log`，可以查看任务执行情况：
-
-```bash
+# 查看执行日志
 tail -f logs/app.log | grep Scheduler
+
+# 查看错误
+grep ERROR logs/app.log
 ```
 
-日志示例：
-```
-[2026-03-09 14:30:00] [INFO] [parser_api.scheduler] [Scheduler] Starting task: weibo
-[2026-03-09 14:30:05] [INFO] [parser_api.scheduler] [Scheduler] Task completed: weibo (elapsed=5.2s)
-```
+## 添加新平台步骤
 
-## 支持的平台
-
-当前配置支持以下平台的定时抓取：
-
-| 平台 | 默认频率 | 说明 |
-|------|---------|------|
-| economist | 每6小时 | The Economist |
-| apnews | 每4小时 | AP News |
-| ftchinese | 每30分钟 | FT中文网 |
-| wsj | 每4小时 | 华尔街日报中文网 |
-| kr36 | 每30分钟 | 36氪 |
-| huxiu | 每30分钟 | 虎嗅 |
-| zaobao | 每4小时 | 早报首页 |
-| zaobao_hotlist | 每30分钟 | 早报热榜 |
-| github_trending | 每6小时 | GitHub Trending |
-| hacker_news | 每30分钟 | Hacker News |
-| zhihu | 每30分钟 | 知乎热榜 |
-| weibo | 每30分钟 | 微博热搜 |
-| pengpai | 每30分钟 | 澎湃新闻 |
-| washingtonpost | 每6小时 | Washington Post |
-
-## 调整配置
-
-### 修改抓取频率
-
-编辑 `django_api/settings.py` 中的 `SCHEDULER_CONFIG`，修改对应平台的 `cron` 值：
-
-```python
-'weibo': {
-    'cron': '*/15 * * * *',  # 改为每15分钟
-    'enabled': True,
-},
-```
-
-### 禁用某个平台
-
-将 `enabled` 设置为 `False`：
-
-```python
-'economist': {
-    'cron': '0 */6 * * *',
-    'enabled': False,  # 禁用
-},
-```
-
-### 添加新平台
-
-1. 在 `SCHEDULER_CONFIG` 中添加配置
-2. 在 `parser_api/scheduler.py` 的 `view_map` 中添加对应的 view 函数映射
+1. 新增提取器：`news_homepage_parser/extractor/{platform}.py`
+2. 注册到 `extractor/__init__.py` 域名分发
+3. 新增视图函数：`parser_api/views.py`
+4. 注册路由：`parser_api/urls.py`
+5. 注册 view_map：`parser_api/scheduler.py`
+6. 添加调度配置：`django_api/settings.py` `SCHEDULER_CONFIG`
+7. 加入平台分组：`django_api/settings.py` `PLATFORM_GROUPS`
+8. 添加标签：`parser_api/frontend_views.py` `PLATFORM_LABELS`
 
 ## 注意事项
 
-1. **任务不重叠**：每个任务设置了 `max_instances=1`，确保同一任务不会重叠执行
-2. **时区设置**：确保 `SCHEDULER_TIMEZONE` 与你的服务器时区一致
-3. **数据库连接**：长时间运行时注意 MySQL 连接超时问题
-4. **日志监控**：定期检查日志文件，确保任务正常执行
-5. **资源占用**：根据服务器性能调整任务频率，避免过于频繁
+- **任务不重叠**：`max_instances=1`，同一任务不会并发执行
+- **数据库连接**：长时间运行时调用 `close_old_connections()` 防止超时
+- **代理配置**：国际平台需要在 `.env` 中配置 `PLAYWRIGHT_PROXY`
+- **date 精度**：写入时截断到分钟（`replace(second=0, microsecond=0)`），保证同批次 `MAX(date)` 精确匹配
 
-## 故障排查
+## 生产部署
 
-### 调度器未启动
-
-检查：
-1. `SCHEDULER_ENABLED` 是否为 `True`
-2. 查看日志中是否有错误信息
-3. 确认 apscheduler 已正确安装
-
-### 任务未执行
-
-检查：
-1. 任务的 `enabled` 是否为 `True`
-2. cron 表达式是否正确
-3. 查看日志中的错误信息
-
-### 任务执行失败
-
-查看日志中的详细错误信息：
-```bash
-grep "Task error" logs/app.log
-```
-
-## 生产环境部署建议
-
-1. **使用独立进程**：使用 `run_scheduler` 命令独立运行调度器
-2. **进程管理**：使用 systemd 或 supervisor 管理调度器进程
-3. **监控告警**：配置日志监控和告警机制
-4. **资源限制**：根据实际情况调整任务频率和并发数
-
-### Systemd 配置示例
-
-创建 `/etc/systemd/system/news-scheduler.service`：
+### Systemd
 
 ```ini
 [Unit]
@@ -282,7 +166,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=www-data
 WorkingDirectory=/path/to/project
 ExecStart=/path/to/project/.venv/bin/python manage.py run_scheduler
 Restart=always
@@ -292,9 +175,17 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-启动服务：
 ```bash
 sudo systemctl enable news-scheduler
 sudo systemctl start news-scheduler
-sudo systemctl status news-scheduler
+```
+
+### Supervisor
+
+```ini
+[program:news-scheduler]
+command=/path/to/.venv/bin/python manage.py run_scheduler
+directory=/path/to/project
+autostart=true
+autorestart=true
 ```
