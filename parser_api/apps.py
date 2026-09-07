@@ -17,16 +17,19 @@ class ParserApiConfig(AppConfig):
         """
         import os
         import sys
-        
-        # 只在 runserver 或 gunicorn 时启动调度器
-        if 'runserver' not in sys.argv and 'gunicorn' not in sys.argv[0]:
+
+        # 只在 runserver 或 gunicorn 时启动调度器，migrate/shell 等命令跳过
+        is_gunicorn = 'gunicorn' in sys.argv[0]
+        is_runserver = 'runserver' in sys.argv
+
+        if not is_gunicorn and not is_runserver:
             return
 
         # Django runserver 的 auto-reloader 会启动两个进程：
         # 主进程（监控文件变化）和子进程（实际运行服务）
-        # RUN_MAIN=true 表示是子进程（实际运行的那个）
-        # 只在子进程中启动调度器，避免重复注册
-        if os.environ.get('RUN_MAIN') != 'true':
+        # RUN_MAIN=true 表示是子进程，只在子进程中启动，避免重复注册
+        # Gunicorn 没有这个机制，直接启动
+        if is_runserver and os.environ.get('RUN_MAIN') != 'true':
             return
 
         try:
