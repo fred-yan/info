@@ -62,9 +62,8 @@ LOCAL_CONFIGS=(
     "frontend/.env"
 )
 
-# systemd 服务名
+# systemd 服务名（调度器随 Gunicorn 一起运行，只需一个服务）
 BACKEND_SERVICE="info-backend"
-SCHEDULER_SERVICE="info-scheduler"
 
 # ── 前置检查 ──────────────────────────────────────────────────────────────────
 echo ""
@@ -231,7 +230,7 @@ log_info "Step 7: 重启 systemd 服务..."
 SUDO_CMD=""
 [[ $EUID -ne 0 ]] && SUDO_CMD="sudo"
 
-for svc in "$BACKEND_SERVICE" "$SCHEDULER_SERVICE"; do
+for svc in "$BACKEND_SERVICE"; do
     if $SUDO_CMD systemctl is-enabled "$svc" &>/dev/null 2>&1; then
         $SUDO_CMD systemctl restart "$svc"
         sleep 2
@@ -270,5 +269,5 @@ echo "常用命令:"
 echo "  查看后端日志:   tail -f $LOGS_DIR/app.log"
 echo "  手动触发抓取:   $PYTHON manage.py run_all_tasks --parallel"
 echo "  手动触发分析:   $PYTHON manage.py extract_keywords_llm --v2 --force"
-echo "  服务状态:       sudo systemctl status $BACKEND_SERVICE $SCHEDULER_SERVICE"
+echo "  服务状态:       sudo systemctl status $BACKEND_SERVICE"
 echo ""
