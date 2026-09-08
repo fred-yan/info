@@ -5,7 +5,7 @@
   padding: 0 1rem;
   height: 3rem;
   border-bottom: 1px solid var(--border, #e5e7eb);
-  background-color: var(--bg, #fff);
+  background-color: var(--nav-bg, #fff);
   flex-shrink: 0;
 }
 

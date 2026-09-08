@@ -61,7 +61,7 @@ function ArticleRow({ article }: { article: LatestArticle }) {
         textAlign: 'right',
         fontSize: '0.78rem',
         fontWeight: 700,
-        color: isTop ? 'var(--accent, #2563eb)' : 'var(--text-muted, #9ca3af)',
+        color: isTop ? 'var(--rank-top, #2563eb)' : 'var(--text-muted, #9ca3af)',
         lineHeight: 1.45,
         paddingTop: '0.02rem',
       }}>

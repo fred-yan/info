@@ -12,7 +12,7 @@
   gap: 0;
   padding: 0 1rem;
   border-bottom: 1px solid var(--border, #e5e7eb);
-  background: var(--card-bg, #fff);
+  background: var(--nav-bg, #fff);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -111,9 +111,4 @@
   }
 }
 
-/* ── Dark mode ── */
-@media (prefers-color-scheme: dark) {
-  .tabBar {
-    --card-bg: #111827;
-  }
-}
+/* ── Dark mode handled via CSS variables in index.css ── */
