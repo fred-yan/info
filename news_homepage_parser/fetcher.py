@@ -61,7 +61,6 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
             }
             use_proxy = False
             if proxy_url:
-                # 检查 URL 是否是国内网站
                 from urllib.parse import urlparse
                 domain = urlparse(url).netloc.lower()
                 use_proxy = not any(d in domain for d in _NO_PROXY_DOMAINS)
@@ -72,7 +71,11 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
             }
             if use_proxy and proxy_url:
                 launch_kwargs["proxy"] = {"server": proxy_url}
-                logger.info("fetch using proxy: %s", proxy_url)
+                logger.info("fetch proxy=YES server=%s url=%s", proxy_url, url)
+            elif proxy_url and not use_proxy:
+                logger.info("fetch proxy=SKIP (domestic domain, direct) url=%s", url)
+            else:
+                logger.info("fetch proxy=NO (PLAYWRIGHT_PROXY not set) url=%s", url)
 
             browser = p.chromium.launch(**launch_kwargs)
             context = browser.new_context(
