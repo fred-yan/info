@@ -71,18 +71,21 @@ def parse(url: str, output_format: str = "json") -> ParseResult:
         )
 
         if tab_selectors:
-            # 多次抓取，每次点击不同 tab，合并 HTML 片段
+            logger.info("parse multi-tab url=%s tabs=%d", canonical_url, len(tab_selectors))
             combined_html_parts = []
-            for selector in tab_selectors:
+            for i, selector in enumerate(tab_selectors):
+                logger.info("parse tab %d/%d selector=%s url=%s", i + 1, len(tab_selectors), selector, canonical_url)
                 ok, html_or_error = fetch(canonical_url, click_selector=selector, use_http1=use_http1, headless=headless, cf_wait=cf_wait, wait_after=wait_after)
                 if not ok:
+                    logger.warning("parse tab %d fetch failed url=%s error=%s", i + 1, canonical_url, html_or_error)
                     return ParseResult(url=url, fetched_at=now, error=html_or_error)
                 combined_html_parts.append(html_or_error)
-            # 将多段 HTML 拼接，extractor 会分别解析
+            logger.info("parse multi-tab merged parts=%d url=%s", len(combined_html_parts), canonical_url)
             html_or_error = "\n<!-- TAB_SEPARATOR -->\n".join(combined_html_parts)
         else:
             ok, html_or_error = fetch(canonical_url, use_http1=use_http1, headless=headless, cf_wait=cf_wait, wait_after=wait_after)
             if not ok:
+                logger.warning("parse fetch failed url=%s error=%s", canonical_url, html_or_error)
                 return ParseResult(url=url, fetched_at=now, error=html_or_error)
 
         # 3. 提取新闻条目
@@ -102,7 +105,7 @@ def parse(url: str, output_format: str = "json") -> ParseResult:
         )
 
     except Exception as e:
-        logger.error("Unhandled exception in parse()", exc_info=True)
+        logger.error("Unhandled exception in parse() url=%s", url, exc_info=True)
         return ParseResult(
             url=url,
             fetched_at=now,

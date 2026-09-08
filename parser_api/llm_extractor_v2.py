@@ -232,6 +232,7 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
     label = cfg["label"]
     now = timezone.now()
     group_name = f"{group}_llm"
+    _t0 = __import__('time').monotonic()
 
     # === Get articles ===
     articles_by_platform = _get_recent_articles(platforms)
@@ -510,7 +511,8 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
             sample_articles=json.dumps(kw["sample_articles"], ensure_ascii=False),
         )
 
-    logger.info("v2_extract done group=%s keywords=%d", group_name, len(top_keywords))
+    logger.info("v2_extract done group=%s keywords=%d total_elapsed=%.1fs",
+                group_name, len(top_keywords), __import__('time').monotonic() - _t0)
 
     return {
         "analysis_time": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -532,6 +534,7 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
     label = cfg["label"]
     now = timezone.now()
     group_name = f"{group}_llm"
+    _t0 = __import__('time').monotonic()
 
     # === Get articles ===
     articles_by_platform = _get_recent_articles(platforms)
@@ -799,7 +802,8 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
             sample_articles=json.dumps(kw["sample_articles"], ensure_ascii=False),
         )
 
-    logger.info("v2_extract done group=%s keywords=%d", group_name, len(top_keywords))
+    logger.info("v2_extract done group=%s keywords=%d total_elapsed=%.1fs",
+                group_name, len(top_keywords), __import__('time').monotonic() - _t0)
 
     return {
         "analysis_time": now.strftime("%Y-%m-%d %H:%M:%S"),

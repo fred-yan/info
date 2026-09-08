@@ -24,70 +24,84 @@ def extract(html: str, base_url: str) -> tuple[list[NewsItem], list[NewsItem], l
     skip_dedup = False  # 标记是否跳过去重
 
     domain = urlparse(base_url).netloc.lower()
+    logger.info("extract start domain=%s html_len=%d", domain, len(html))
 
     if "huxiu.com" in domain:
         soup = BeautifulSoup(html, "html.parser")
         items = huxiu.extract(soup, base_url)
-        # 添加首页第一个栏目的文章
         first_section_items = huxiu.extract_first_section(soup, base_url)
         items.extend(first_section_items)
-        skip_dedup = True  # 虎嗅不去重
+        skip_dedup = True
+        strategy = "huxiu"
     elif "zaobao.com" in domain:
         soup = BeautifulSoup(html, "html.parser")
         items = zaobao.extract(soup, base_url)
-        skip_dedup = True  # 早报不去重
+        skip_dedup = True
+        strategy = "zaobao"
     elif "wsj.com" in domain:
         items = wsj.extract(html, base_url)
-        skip_dedup = True  # WSJ 已在内部去重
+        skip_dedup = True
+        strategy = "wsj"
     else:
         soup = BeautifulSoup(html, "html.parser")
         if "economist.com" in domain:
             items = economist.extract(soup, base_url)
             most_read = economist.extract_most_read(soup, base_url)
-            skip_dedup = True  # Economist 不去重
+            skip_dedup = True
+            strategy = "economist"
         elif "washingtonpost.com" in domain:
             items = washingtonpost.extract(soup, base_url)
             most_read = washingtonpost.extract_most_read(soup, base_url)
+            strategy = "washingtonpost"
         elif "apnews.com" in domain:
             items = apnews.extract(soup, base_url)
             most_read = apnews.extract_most_read(soup, base_url)
+            strategy = "apnews"
         elif "ftchinese.com" in domain:
-            # 提取今日焦点（首页第一个栏目）+ 热门文章 + 热门付费文章
             focus_items = ftchinese.extract(soup, base_url)
             items = focus_items
             hot_articles = ftchinese.extract_hot_articles(soup, base_url)
             hot_premium = ftchinese.extract_hot_premium(soup, base_url)
             items.extend(hot_articles)
             items.extend(hot_premium)
-            skip_dedup = True  # FT中文网不去重
+            skip_dedup = True
+            strategy = "ftchinese"
         elif "36kr.com" in domain:
             items = kr36.extract(soup, base_url)
-            skip_dedup = True  # 36氪不去重
+            skip_dedup = True
+            strategy = "kr36"
         elif "tmtpost.com" in domain:
             items = tmtpost.extract(soup, base_url)
-            skip_dedup = True  # 钛媒体不去重
+            skip_dedup = True
+            strategy = "tmtpost"
         elif "theverge.com" in domain:
             items = theverge.extract(soup, base_url)
             skip_dedup = True
+            strategy = "theverge"
         elif "techcrunch.com" in domain:
             items = techcrunch.extract(soup, base_url)
             skip_dedup = True
+            strategy = "techcrunch"
         elif "technologyreview.com" in domain:
             items = mittr.extract(soup, base_url)
             skip_dedup = True
+            strategy = "mittr"
         else:
+            logger.warning("extract using generic fallback domain=%s", domain)
             warnings.append("Generic extraction strategy applied")
             items = generic.extract(soup, base_url)
+            strategy = "generic"
 
     items = [i for i in items if i.title.strip() and i.link]
     most_read = [i for i in most_read if i.title.strip() and i.link]
-    # 只对未标记的网站进行去重
     if not skip_dedup:
         items = dedup(items)
     most_read = dedup(most_read)
 
     if not items:
+        logger.warning("extract found 0 items domain=%s strategy=%s", domain, strategy)
         warnings.append("Warning: no news items found on this page")
 
-    logger.debug("extract done domain=%s items=%d most_read=%d warnings=%d", domain, len(items), len(most_read), len(warnings))
+    logger.info("extract done domain=%s strategy=%s items=%d most_read=%d",
+                domain, strategy, len(items), len(most_read))
     return (items, most_read, warnings)

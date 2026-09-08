@@ -30,12 +30,23 @@ def _now_minute() -> object:
     return timezone.now().replace(second=0, microsecond=0)
 
 
+def _bulk_save(platform: str, info_objects: list, url: str = "") -> None:
+    """批量写入数据库，统一处理日志和空结果警告。"""
+    if info_objects:
+        close_old_connections()
+        Info.objects.bulk_create(info_objects)
+        logger.info("%s saved to db items=%d", platform, len(info_objects))
+    else:
+        logger.warning("%s result empty (0 items) url=%s", platform, url)
+
+
 def economist_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
     url = SITE_URLS["economist"]
     t0 = time.monotonic()
+    logger.info("economist_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -89,13 +100,16 @@ def economist_view(request):
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
                 logger.info("economist saved to db items=%d most_read=%d", len(result.items), len(result.most_read))
+            else:
+                logger.warning("economist result empty items=%d most_read=%d url=%s",
+                               len(result.items or []), len(result.most_read or []), url)
         except Exception as db_exc:
             logger.error("economist db save error: %s", db_exc, exc_info=True)
             # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -105,6 +119,7 @@ def apnews_view(request):
 
     url = SITE_URLS["apnews"]
     t0 = time.monotonic()
+    logger.info("apnews_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -158,7 +173,7 @@ def apnews_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -168,6 +183,7 @@ def ftchinese_view(request):
 
     url = SITE_URLS["ftchinese"]
     t0 = time.monotonic()
+    logger.info("ftchinese_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -209,7 +225,7 @@ def ftchinese_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -219,6 +235,7 @@ def wsj_view(request):
 
     url = SITE_URLS["wsj"]
     t0 = time.monotonic()
+    logger.info("wsj_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -260,7 +277,7 @@ def wsj_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -270,6 +287,7 @@ def kr36_view(request):
 
     url = SITE_URLS["kr36"]
     t0 = time.monotonic()
+    logger.info("kr36_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -311,7 +329,7 @@ def kr36_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -319,6 +337,7 @@ def huxiu_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    logger.info("huxiu_view start")
     t0 = time.monotonic()
     try:
         items = huxiu_fetch_article_list(page_size=20)
@@ -361,6 +380,7 @@ def wscn_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    logger.info("wscn_view start")
     t0 = time.monotonic()
     try:
         items = wscn_fetch_hot_articles()
@@ -403,6 +423,7 @@ def cls_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    logger.info("cls_view start")
     t0 = time.monotonic()
     try:
         items = cls_fetch_hot_articles()
@@ -445,6 +466,7 @@ def jiqizhixin_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    logger.info("jiqizhixin_view start")
     t0 = time.monotonic()
     try:
         items = jiqizhixin_fetch_articles(page_size=15)
@@ -487,6 +509,7 @@ def theverge_view(request):
         return HttpResponse(status=405)
     url = SITE_URLS["theverge"]
     t0 = time.monotonic()
+    logger.info("theverge_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -513,6 +536,7 @@ def techcrunch_view(request):
         return HttpResponse(status=405)
     url = SITE_URLS["techcrunch"]
     t0 = time.monotonic()
+    logger.info("techcrunch_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -539,6 +563,7 @@ def mittr_view(request):
         return HttpResponse(status=405)
     url = SITE_URLS["mittr"]
     t0 = time.monotonic()
+    logger.info("mittr_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -567,6 +592,7 @@ def tmtpost_view(request):
 
     url = SITE_URLS["tmtpost"]
     t0 = time.monotonic()
+    logger.info("tmtpost_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -598,7 +624,7 @@ def tmtpost_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -608,6 +634,7 @@ def wst_post_view(request):
 
     url = SITE_URLS["wst_post"]
     t0 = time.monotonic()
+    logger.info("wst_post_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -667,7 +694,7 @@ def wst_post_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 
@@ -677,6 +704,7 @@ def zaobao_view(request):
 
     url = SITE_URLS["zaobao"]
     t0 = time.monotonic()
+    logger.info("zaobao_view start url=%s", url)
     try:
         result = parse(url)
     except Exception as exc:
@@ -718,7 +746,7 @@ def zaobao_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
-    logger.info("view response url=%s status=%d elapsed=%.1fs", url, status, elapsed)
+    logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
 

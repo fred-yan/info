@@ -4,6 +4,7 @@
 """
 import json
 import logging
+import time
 from datetime import timedelta
 
 from django.conf import settings
@@ -58,321 +59,279 @@ def _llm_group(group: str) -> str:
 def keywords_ranking_view(request):
     """
     GET /api/keywords/ranking/?group={domestic|international}
-    
     返回关键词排名列表，包含趋势方向。
-    通过比较最近两次分析结果计算趋势。
-    使用 LLM 方案的分析结果。
     """
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    t0 = time.monotonic()
     group = request.GET.get("group", "domestic")
     top = int(request.GET.get("top", "50"))
+    logger.info("keywords_ranking group=%s top=%d", group, top)
 
     if group not in ("domestic", "international"):
         return _error_response("group 参数必须为 domestic 或 international")
 
     db_group = _llm_group(group)
 
-    # 获取最近两次分析
-    analyses = KeywordAnalysis.objects.filter(
-        group=db_group
-    ).order_by("-analysis_time")[:2]
+    try:
+        analyses = KeywordAnalysis.objects.filter(
+            group=db_group
+        ).order_by("-analysis_time")[:2]
 
-    if not analyses.exists():
-        return _error_response("暂无分析结果", status=404)
+        if not analyses.exists():
+            logger.warning("keywords_ranking no results group=%s", db_group)
+            return _error_response("暂无分析结果", status=404)
 
-    latest = analyses[0]
-    previous = analyses[1] if len(analyses) > 1 else None
+        latest = analyses[0]
+        previous = analyses[1] if len(analyses) > 1 else None
 
-    # 获取最新排名结果
-    results = KeywordResult.objects.filter(
-        analysis=latest
-    ).order_by("rank")[:top]
+        results = KeywordResult.objects.filter(
+            analysis=latest
+        ).order_by("rank")[:top]
 
-    # 获取上一次的分数用于计算趋势
-    prev_scores = {}
-    if previous:
-        prev_results = KeywordResult.objects.filter(analysis=previous)
-        prev_scores = {r.keyword: r.score for r in prev_results}
+        prev_scores = {}
+        if previous:
+            prev_results = KeywordResult.objects.filter(analysis=previous)
+            prev_scores = {r.keyword: r.score for r in prev_results}
 
-    # 预取 sample_articles 里用到的文章 URL → 阶段1短语映射，用于透明性展示
-    from .models import LLMPhraseExtraction, Info as InfoModel
-    # Collect all article URLs from sample_articles across all results
-    all_sample_urls: set[str] = set()
-    raw_samples: dict[str, list] = {}
-    for r in results:
-        sa = json.loads(r.sample_articles)
-        raw_samples[r.keyword] = sa
-        for a in sa:
-            if a.get("url"):
-                all_sample_urls.add(a["url"])
+        from .models import LLMPhraseExtraction, Info as InfoModel
+        all_sample_urls: set[str] = set()
+        raw_samples: dict[str, list] = {}
+        for r in results:
+            sa = json.loads(r.sample_articles)
+            raw_samples[r.keyword] = sa
+            for a in sa:
+                if a.get("url"):
+                    all_sample_urls.add(a["url"])
 
-    # URL → article_id mapping
-    url_to_id: dict[str, int] = {}
-    if all_sample_urls:
-        for info in InfoModel.objects.filter(url__in=list(all_sample_urls)).only("id", "url"):
-            url_to_id[info.url] = info.id
+        url_to_id: dict[str, int] = {}
+        if all_sample_urls:
+            for info in InfoModel.objects.filter(url__in=list(all_sample_urls)).only("id", "url"):
+                url_to_id[info.url] = info.id
 
-    # article_id → normalized_phrases mapping (latest extraction within 24h)
-    from django.utils import timezone as tz
-    from datetime import timedelta
-    since = tz.now() - timedelta(hours=24)
-    id_to_phrases: dict[int, list[str]] = {}
-    if url_to_id:
-        for ext in LLMPhraseExtraction.objects.filter(
-            article_id__in=list(url_to_id.values()),
-            analysis_time__gte=since,
-        ).order_by("-analysis_time"):
-            if ext.article_id not in id_to_phrases:
-                try:
-                    id_to_phrases[ext.article_id] = json.loads(ext.normalized_phrases or "[]")
-                except (json.JSONDecodeError, TypeError):
-                    id_to_phrases[ext.article_id] = []
+        from django.utils import timezone as tz
+        since = tz.now() - timedelta(hours=24)
+        id_to_phrases: dict[int, list[str]] = {}
+        if url_to_id:
+            for ext in LLMPhraseExtraction.objects.filter(
+                article_id__in=list(url_to_id.values()),
+                analysis_time__gte=since,
+            ).order_by("-analysis_time"):
+                if ext.article_id not in id_to_phrases:
+                    try:
+                        id_to_phrases[ext.article_id] = json.loads(ext.normalized_phrases or "[]")
+                    except (json.JSONDecodeError, TypeError):
+                        id_to_phrases[ext.article_id] = []
 
-    keywords = []
-    for r in results:
-        prev_score = prev_scores.get(r.keyword)
-        if prev_score is None:
-            trend_direction = "rising"
-        elif r.score > prev_score:
-            trend_direction = "rising"
-        elif r.score < prev_score:
-            trend_direction = "falling"
-        else:
-            trend_direction = "stable"
+        keywords = []
+        for r in results:
+            prev_score = prev_scores.get(r.keyword)
+            if prev_score is None:
+                trend_direction = "rising"
+            elif r.score > prev_score:
+                trend_direction = "rising"
+            elif r.score < prev_score:
+                trend_direction = "falling"
+            else:
+                trend_direction = "stable"
 
-        # Enrich sample_articles with the phrases extracted from each article
-        enriched_samples = []
-        for a in raw_samples.get(r.keyword, []):
-            url = a.get("url", "")
-            aid = url_to_id.get(url)
-            phrases = id_to_phrases.get(aid, []) if aid else []
-            enriched_samples.append({
-                **a,
-                "matched_phrases": phrases,  # 该文章阶段1提取出的短语，便于判断关联是否合理
+            enriched_samples = []
+            for a in raw_samples.get(r.keyword, []):
+                url = a.get("url", "")
+                aid = url_to_id.get(url)
+                phrases = id_to_phrases.get(aid, []) if aid else []
+                enriched_samples.append({**a, "matched_phrases": phrases})
+
+            keywords.append({
+                "keyword": r.keyword,
+                "score": round(r.score, 2),
+                "rank": r.rank,
+                "count": r.count,
+                "platform_count": r.platform_count,
+                "coverage": round(r.coverage, 4),
+                "sources": json.loads(r.sources),
+                "sample_articles": enriched_samples,
+                "trend_direction": trend_direction,
             })
 
-        keywords.append({
-            "keyword": r.keyword,
-            "score": round(r.score, 2),
-            "rank": r.rank,
-            "count": r.count,
-            "platform_count": r.platform_count,
-            "coverage": round(r.coverage, 4),
-            "sources": json.loads(r.sources),
-            "sample_articles": enriched_samples,
-            "trend_direction": trend_direction,
+        logger.info("keywords_ranking ok group=%s keywords=%d elapsed=%.2fs",
+                    group, len(keywords), time.monotonic() - t0)
+        return _json_response({
+            "analysis_time": latest.analysis_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "group": group,
+            "keywords": keywords,
         })
-
-    return _json_response({
-        "analysis_time": latest.analysis_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "group": group,
-        "keywords": keywords,
-    })
+    except Exception as exc:
+        logger.error("keywords_ranking error group=%s elapsed=%.2fs",
+                     group, time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc)}, status=500)
 
 
 def keywords_trend_view(request):
-    """
-    GET /api/keywords/trend/?keyword={kw}&group={domestic|international}&days=7
-    
-    返回关键词在过去 N 天的历史分数（每次分析一个数据点）。
-    """
+    """GET /api/keywords/trend/?keyword={kw}&group={domestic|international}&days=7"""
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    t0 = time.monotonic()
     keyword = request.GET.get("keyword")
     group = request.GET.get("group", "domestic")
     days = int(request.GET.get("days", "7"))
+    logger.info("keywords_trend keyword=%s group=%s days=%d", keyword, group, days)
 
     if not keyword:
         return _error_response("keyword 参数必填")
-
     if group not in ("domestic", "international"):
         return _error_response("group 参数必须为 domestic 或 international")
 
     db_group = _llm_group(group)
-
-    # 查询过去 N 天的分析结果
     since = timezone.now() - timedelta(days=days)
 
-    analyses = KeywordAnalysis.objects.filter(
-        group=db_group,
-        analysis_time__gte=since,
-    ).order_by("analysis_time")
+    try:
+        analyses = KeywordAnalysis.objects.filter(
+            group=db_group, analysis_time__gte=since,
+        ).order_by("analysis_time")
 
-    data_points = []
-    for analysis in analyses:
-        result = KeywordResult.objects.filter(
-            analysis=analysis,
-            keyword=keyword,
-        ).first()
+        data_points = []
+        for analysis in analyses:
+            result = KeywordResult.objects.filter(
+                analysis=analysis, keyword=keyword,
+            ).first()
+            if result:
+                data_points.append({
+                    "timestamp": analysis.analysis_time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "score": round(result.score, 2),
+                })
 
-        if result:
-            data_points.append({
-                "timestamp": analysis.analysis_time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "score": round(result.score, 2),
-            })
+        if not data_points:
+            logger.warning("keywords_trend no data keyword=%s group=%s", keyword, group)
 
-    return _json_response({
-        "keyword": keyword,
-        "group": group,
-        "days": days,
-        "data_points": data_points,
-    })
+        logger.info("keywords_trend ok keyword=%s points=%d elapsed=%.2fs",
+                    keyword, len(data_points), time.monotonic() - t0)
+        return _json_response({"keyword": keyword, "group": group, "days": days, "data_points": data_points})
+    except Exception as exc:
+        logger.error("keywords_trend error keyword=%s elapsed=%.2fs",
+                     keyword, time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc)}, status=500)
 
 
 def keywords_articles_view(request):
-    """
-    GET /api/keywords/articles/?keyword={kw}&group={domestic|international}
-    
-    返回与关键词关联的文章列表。
-    从最新分析的 sample_articles 获取基础数据，
-    并从 Info 表补充完整信息。
-    """
+    """GET /api/keywords/articles/?keyword={kw}&group={domestic|international}"""
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    t0 = time.monotonic()
     keyword = request.GET.get("keyword")
     group = request.GET.get("group", "domestic")
+    logger.info("keywords_articles keyword=%s group=%s", keyword, group)
 
     if not keyword:
         return _error_response("keyword 参数必填")
-
     if group not in ("domestic", "international"):
         return _error_response("group 参数必须为 domestic 或 international")
 
     db_group = _llm_group(group)
 
-    # 获取最新分析中该关键词的结果
-    latest_analysis = KeywordAnalysis.objects.filter(
-        group=db_group
-    ).order_by("-analysis_time").first()
+    try:
+        latest_analysis = KeywordAnalysis.objects.filter(
+            group=db_group
+        ).order_by("-analysis_time").first()
 
-    if not latest_analysis:
-        return _error_response("暂无分析结果", status=404)
+        if not latest_analysis:
+            logger.warning("keywords_articles no analysis group=%s", db_group)
+            return _error_response("暂无分析结果", status=404)
 
-    result = KeywordResult.objects.filter(
-        analysis=latest_analysis,
-        keyword=keyword,
-    ).first()
+        result = KeywordResult.objects.filter(
+            analysis=latest_analysis, keyword=keyword,
+        ).first()
 
-    if not result:
-        return _json_response({
-            "keyword": keyword,
-            "articles": [],
-        })
+        if not result:
+            logger.warning("keywords_articles keyword not found keyword=%s group=%s", keyword, group)
+            return _json_response({"keyword": keyword, "articles": []})
 
-    # 解析 sample_articles
-    sample_articles = json.loads(result.sample_articles)
+        sample_articles = json.loads(result.sample_articles)
+        platform_groups = settings.PLATFORM_GROUPS
+        platforms = platform_groups.get(group, {}).get("platforms", [])
+        since = timezone.now() - timedelta(days=7)
+        matching_articles = Info.objects.filter(
+            platform__in=platforms, date__gte=since, title__icontains=keyword,
+        ).order_by("-date")[:100]
 
-    # 从 Info 表中查找匹配的文章以获取完整信息
-    # 使用平台分组中的平台列表
-    platform_groups = settings.PLATFORM_GROUPS
-    platforms = platform_groups.get(group, {}).get("platforms", [])
+        articles = []
+        seen_urls = set()
+        for sa in sample_articles:
+            url = sa.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                articles.append({
+                    "id": 0, "title": sa.get("title", ""), "url": url,
+                    "platform": sa.get("platform", ""), "section": "",
+                    "date": latest_analysis.analysis_time.strftime("%Y-%m-%dT%H:%M:%S"),
+                })
+        for info in matching_articles:
+            if info.url not in seen_urls:
+                seen_urls.add(info.url)
+                articles.append({
+                    "id": info.id, "title": info.title, "url": info.url,
+                    "platform": info.platform, "section": info.section,
+                    "date": info.date.strftime("%Y-%m-%dT%H:%M:%S"),
+                })
 
-    # 在最近 7 天的文章中搜索包含关键词的标题
-    since = timezone.now() - timedelta(days=7)
-    matching_articles = Info.objects.filter(
-        platform__in=platforms,
-        date__gte=since,
-        title__icontains=keyword,
-    ).order_by("-date")[:100]
-
-    articles = []
-    seen_urls = set()
-
-    # 先添加 sample_articles 中的文章
-    for sa in sample_articles:
-        url = sa.get("url", "")
-        if url and url not in seen_urls:
-            seen_urls.add(url)
-            articles.append({
-                "id": 0,
-                "title": sa.get("title", ""),
-                "url": url,
-                "platform": sa.get("platform", ""),
-                "section": "",
-                "date": latest_analysis.analysis_time.strftime("%Y-%m-%dT%H:%M:%S"),
-            })
-
-    # 补充 Info 表中的匹配文章
-    for info in matching_articles:
-        if info.url not in seen_urls:
-            seen_urls.add(info.url)
-            articles.append({
-                "id": info.id,
-                "title": info.title,
-                "url": info.url,
-                "platform": info.platform,
-                "section": info.section,
-                "date": info.date.strftime("%Y-%m-%dT%H:%M:%S"),
-            })
-
-    return _json_response({
-        "keyword": keyword,
-        "articles": articles,
-    })
+        logger.info("keywords_articles ok keyword=%s articles=%d elapsed=%.2fs",
+                    keyword, len(articles), time.monotonic() - t0)
+        return _json_response({"keyword": keyword, "articles": articles})
+    except Exception as exc:
+        logger.error("keywords_articles error keyword=%s elapsed=%.2fs",
+                     keyword, time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc)}, status=500)
 
 
 def news_feed_view(request):
-    """
-    GET /api/news/feed/?platform={p}&section={s}&page={n}&page_size={size}
-    
-    分页文章流，支持平台和栏目过滤。
-    """
+    """GET /api/news/feed/?platform={p}&section={s}&page={n}&page_size={size}"""
     if request.method != "GET":
         return HttpResponse(status=405)
 
-    # 解析参数
-    platform = request.GET.get("platform")  # 逗号分隔的平台列表
+    t0 = time.monotonic()
+    platform = request.GET.get("platform")
     section = request.GET.get("section")
-    page = int(request.GET.get("page", "1"))
-    page_size = int(request.GET.get("page_size", "20"))
+    page = max(int(request.GET.get("page", "1")), 1)
+    page_size = min(int(request.GET.get("page_size", "20")), 100)
+    logger.info("news_feed platform=%s section=%s page=%d page_size=%d",
+                platform, section, page, page_size)
 
-    # 限制 page_size
-    page_size = min(page_size, 100)
-    page = max(page, 1)
+    try:
+        queryset = Info.objects.all()
+        if platform:
+            platforms = [p.strip() for p in platform.split(",") if p.strip()]
+            if platforms:
+                queryset = queryset.filter(platform__in=platforms)
+        if section:
+            queryset = queryset.filter(section=section)
 
-    # 构建查询
-    queryset = Info.objects.all()
+        queryset = queryset.order_by("-date", "-id")
+        total = queryset.count()
+        offset = (page - 1) * page_size
+        articles_qs = queryset[offset:offset + page_size]
 
-    if platform:
-        platforms = [p.strip() for p in platform.split(",") if p.strip()]
-        if platforms:
-            queryset = queryset.filter(platform__in=platforms)
+        articles = []
+        for info in articles_qs:
+            articles.append({
+                "id": info.id, "title": info.title, "url": info.url,
+                "platform": info.platform, "section": info.section,
+                "date": info.date.strftime("%Y-%m-%dT%H:%M:%S"),
+            })
 
-    if section:
-        queryset = queryset.filter(section=section)
-
-    # 按时间倒序
-    queryset = queryset.order_by("-date", "-id")
-
-    # 计算总数和分页
-    total = queryset.count()
-    offset = (page - 1) * page_size
-    articles_qs = queryset[offset:offset + page_size]
-
-    articles = []
-    for info in articles_qs:
-        articles.append({
-            "id": info.id,
-            "title": info.title,
-            "url": info.url,
-            "platform": info.platform,
-            "section": info.section,
-            "date": info.date.strftime("%Y-%m-%dT%H:%M:%S"),
+        has_next = (offset + page_size) < total
+        logger.info("news_feed ok articles=%d total=%d elapsed=%.2fs",
+                    len(articles), total, time.monotonic() - t0)
+        return _json_response({
+            "articles": articles, "total": total,
+            "page": page, "page_size": page_size, "has_next": has_next,
         })
-
-    has_next = (offset + page_size) < total
-
-    return _json_response({
-        "articles": articles,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "has_next": has_next,
-    })
+    except Exception as exc:
+        logger.error("news_feed error platform=%s elapsed=%.2fs",
+                     platform, time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc)}, status=500)
 
 
 def _cron_to_interval_label(cron: str) -> str:
@@ -404,72 +363,66 @@ def _cron_to_interval_label(cron: str) -> str:
 
 
 def platforms_view(request):
-    """
-    GET /api/platforms/
-
-    返回所有平台的元数据：标签、分组、最后抓取时间、文章总数、更新频率。
-    """
+    """GET /api/platforms/ — 返回所有平台元数据"""
     if request.method != "GET":
         return HttpResponse(status=405)
 
-    platform_groups = settings.PLATFORM_GROUPS
-    scheduler_config = getattr(settings, 'SCHEDULER_CONFIG', {})
+    t0 = time.monotonic()
+    logger.info("platforms_view called")
 
-    # 获取每个平台的最后抓取时间和文章数
-    platform_stats = Info.objects.values("platform").annotate(
-        last_fetch=Max("date"),
-        article_count=Count("id"),
-    )
+    try:
+        platform_groups = settings.PLATFORM_GROUPS
+        scheduler_config = getattr(settings, 'SCHEDULER_CONFIG', {})
 
-    stats_map = {s["platform"]: s for s in platform_stats}
+        platform_stats = Info.objects.values("platform").annotate(
+            last_fetch=Max("date"),
+            article_count=Count("id"),
+        )
+        stats_map = {s["platform"]: s for s in platform_stats}
 
-    # 构建 platform → cron 映射
-    # task_name 与 platform name 可能不同（如 hacker_news vs hackernews，github_trending_daily vs github）
-    # 使用显式别名表 + 前缀匹配双重查找
-    _TASK_PLATFORM_ALIAS = {
-        'hacker_news': 'hackernews',
-        'zaobao_hotlist': 'zaobao',
-        'github_trending_daily': 'github',
-        'github_trending_weekly': 'github',
-        'github_trending_monthly': 'github',
-    }
-    platform_cron_map: dict[str, str] = {}
-    for task_name, cfg in scheduler_config.items():
-        if not cfg.get('enabled', True):
-            continue
-        cron = cfg.get('cron', '')
-        # First: check explicit alias
-        aliased = _TASK_PLATFORM_ALIAS.get(task_name)
-        if aliased and aliased not in platform_cron_map:
-            platform_cron_map[aliased] = cron
-            continue
-        # Then: check if task_name matches a platform name directly or by prefix
-        for group_cfg in platform_groups.values():
-            for pname in group_cfg["platforms"]:
-                if task_name == pname or task_name.startswith(pname + '_'):
-                    if pname not in platform_cron_map:
-                        platform_cron_map[pname] = cron
+        _TASK_PLATFORM_ALIAS = {
+            'hacker_news': 'hackernews',
+            'zaobao_hotlist': 'zaobao',
+            'github_trending_daily': 'github',
+            'github_trending_weekly': 'github',
+            'github_trending_monthly': 'github',
+        }
+        platform_cron_map: dict[str, str] = {}
+        for task_name, cfg in scheduler_config.items():
+            if not cfg.get('enabled', True):
+                continue
+            cron = cfg.get('cron', '')
+            aliased = _TASK_PLATFORM_ALIAS.get(task_name)
+            if aliased and aliased not in platform_cron_map:
+                platform_cron_map[aliased] = cron
+                continue
+            for group_cfg in platform_groups.values():
+                for pname in group_cfg["platforms"]:
+                    if task_name == pname or task_name.startswith(pname + '_'):
+                        if pname not in platform_cron_map:
+                            platform_cron_map[pname] = cron
 
-    platforms = []
-    for group_name, group_cfg in platform_groups.items():
-        for platform_name in group_cfg["platforms"]:
-            stats = stats_map.get(platform_name, {})
-            last_fetch = stats.get("last_fetch")
-            cron = platform_cron_map.get(platform_name, '')
-            update_interval = _cron_to_interval_label(cron)
+        platforms = []
+        for group_name, group_cfg in platform_groups.items():
+            for platform_name in group_cfg["platforms"]:
+                stats = stats_map.get(platform_name, {})
+                last_fetch = stats.get("last_fetch")
+                cron = platform_cron_map.get(platform_name, '')
+                update_interval = _cron_to_interval_label(cron)
+                platforms.append({
+                    "name": platform_name,
+                    "label": PLATFORM_LABELS.get(platform_name, platform_name),
+                    "group": group_name,
+                    "last_fetch": last_fetch.strftime("%Y-%m-%dT%H:%M:%S+00:00") if last_fetch else None,
+                    "article_count": stats.get("article_count", 0),
+                    "update_interval": update_interval,
+                })
 
-            platforms.append({
-                "name": platform_name,
-                "label": PLATFORM_LABELS.get(platform_name, platform_name),
-                "group": group_name,
-                "last_fetch": last_fetch.strftime("%Y-%m-%dT%H:%M:%S+00:00") if last_fetch else None,
-                "article_count": stats.get("article_count", 0),
-                "update_interval": update_interval,
-            })
-
-    return _json_response({
-        "platforms": platforms,
-    })
+        logger.info("platforms_view ok count=%d elapsed=%.2fs", len(platforms), time.monotonic() - t0)
+        return _json_response({"platforms": platforms})
+    except Exception as exc:
+        logger.error("platforms_view error elapsed=%.2fs", time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc)}, status=500)
 
 
 # ── ranktime → 卡片标题映射 ────────────────────────────────────────────────────
@@ -519,9 +472,12 @@ def news_latest_view(request):
     if request.method != "GET":
         return HttpResponse(status=405)
 
+    t0 = time.monotonic()
     platform = request.GET.get("platform", "").strip()
     if not platform:
         return _error_response("platform 参数必填")
+
+    logger.info("news_latest platform=%s", platform)
 
     # 1. 取该平台最近一次抓取时间
     from django.db.models import Max
@@ -529,6 +485,7 @@ def news_latest_view(request):
     latest_date = agg.get("latest")
 
     if latest_date is None:
+        logger.warning("news_latest no data platform=%s", platform)
         return _error_response(f"平台 '{platform}' 暂无数据", status=404)
 
     # 2. 时效性判断
@@ -618,9 +575,12 @@ def news_latest_view(request):
         return _error_response(f"平台 '{platform}' 暂无数据", status=404)
 
     if is_stale:
+        logger.warning("news_latest stale platform=%s fetch_age_hours=%.1f", platform, fetch_age_hours)
         return _error_response(
             f"平台 '{platform}' 数据已过期（{fetch_age_hours} 小时前）",
             status=503,
         )
 
+    logger.info("news_latest ok platform=%s cards=%d fetch_age_hours=%.1f elapsed=%.2fs",
+                platform, len(cards), fetch_age_hours, time.monotonic() - t0)
     return _json_response({"cards": cards})

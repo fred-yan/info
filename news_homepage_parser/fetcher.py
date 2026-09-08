@@ -164,13 +164,12 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
                     time.sleep(5)
                         
                 except Exception as e:
-                    logger.error("Click failed: %s", e)
-                    pass  # 点击失败不影响主流程
+                    logger.error("Click failed: %s", e, exc_info=True)
             # 等待页面导航稳定再取内容（防止 JS 重定向导致 content() 报错）
             try:
                 page.wait_for_load_state("domcontentloaded", timeout=5000)
-            except Exception:
-                pass  # 超时或已稳定，继续
+            except Exception as e:
+                logger.debug("wait_for_load_state timeout/ignored url=%s err=%s", url, e)
             html = page.content()
             browser.close()
             elapsed = time.monotonic() - t0
