@@ -31,9 +31,11 @@ BATCH_SIZE = LLMConfig.BATCH_SIZE  # 从 llm_config.ini 读取，默认 10
 
 def _validate_stage1_result(
     result: dict,
-    batch: list,          # [(seq, title, article_id), ...]
+    batch: list,
     batch_idx: int,
     group: str,
+    user_prompt: str = "",
+    raw_output: str = "",
 ) -> tuple[bool, list[dict]]:
     """
     对阶段1单批 LLM 输出进行形式化校验。
@@ -119,6 +121,11 @@ def _validate_stage1_result(
     if errors:
         for err in errors:
             logger.error("%s 校验严重错误: %s", prefix, err)
+        # 记录输入输出帮助排查
+        if user_prompt:
+            logger.error("%s 输入(前500字):\n%s", prefix, user_prompt[:500])
+        if raw_output:
+            logger.error("%s LLM原始输出(前1000字):\n%s", prefix, raw_output[:1000])
     if warnings:
         for w in warnings:
             logger.warning("%s 校验警告: %s", prefix, w)
@@ -136,6 +143,8 @@ def _validate_stage2_result(
     known_phrases: set[str],
     batch_num: int,
     group: str,
+    user_prompt: str = "",
+    raw_output: str = "",
 ) -> tuple[bool, list[dict]]:
     """
     对阶段2单批 LLM 输出进行形式化校验。
@@ -194,6 +203,10 @@ def _validate_stage2_result(
     if errors:
         for err in errors:
             logger.error("%s 校验严重错误: %s", prefix, err)
+        if user_prompt:
+            logger.error("%s 输入(前500字):\n%s", prefix, user_prompt[:500])
+        if raw_output:
+            logger.error("%s LLM原始输出(前1000字):\n%s", prefix, raw_output[:1000])
     if warnings:
         for w in warnings:
             logger.warning("%s 校验警告: %s", prefix, w)
@@ -276,14 +289,15 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
                 count=len(batch), titles=formatted
             )
 
-            result = _call_llm(extractor, STAGE1_SYSTEM_PROMPT, user_prompt,
+            result, raw = _call_llm(extractor, STAGE1_SYSTEM_PROMPT, user_prompt,
                               group=group, batch_index=batch_idx, analysis_time=now)
             if not result:
                 continue
 
             # ── 校验阶段1输出 ──────────────────────────────────
             has_critical, valid_items = _validate_stage1_result(
-                result, batch, batch_idx, group
+                result, batch, batch_idx, group,
+                user_prompt=user_prompt, raw_output=raw or "",
             )
             if has_critical:
                 logger.warning(
@@ -370,7 +384,7 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
 
         close_old_connections()
         extractor = NewsPhraseExtractor()
-        stage2_result = _call_llm(extractor, STAGE2_SYSTEM_PROMPT, stage2_user,
+        stage2_result, stage2_raw = _call_llm(extractor, STAGE2_SYSTEM_PROMPT, stage2_user,
                                   group=group, batch_index=900 + batch_num, analysis_time=now)
         if not stage2_result:
             continue
@@ -382,6 +396,7 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
             known_phrases=known_phrases,
             batch_num=batch_num,
             group=group,
+            user_prompt=stage2_user, raw_output=stage2_raw or "",
         )
         if has_critical:
             logger.warning(
@@ -879,11 +894,11 @@ def _call_llm(extractor: NewsPhraseExtractor, system_prompt: str, user_prompt: s
                 batch_index=batch_index,
                 title_count=0,
                 input_titles="",
-                output_raw=raw[:5000],  # Truncate for storage
+                output_raw=raw[:5000],
                 success=True,
             )
 
-        return result
+        return result, raw
 
     except Exception as e:
         elapsed = _time.monotonic() - t0
@@ -903,4 +918,4 @@ def _call_llm(extractor: NewsPhraseExtractor, system_prompt: str, user_prompt: s
                 )
             except Exception:
                 pass
-        return None
+        return None, None
