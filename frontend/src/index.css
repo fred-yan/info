@@ -72,8 +72,8 @@
  *   Skeleton:     #1e1f2e / #2a2b3d
  */
 [data-theme="dark"] {
-  --text:           #e2e8f0;
-  --text-h:         #f1f5f9;
+  --text:           #b0bec8;
+  --text-h:         #cbd5e1;
   --text-muted:     #64748b;
 
   --bg:             #12131a;
@@ -106,8 +106,8 @@
 /* ── Dark theme — follow system (only when no manual override) ──────────── */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]):not([data-theme="dark"]) {
-    --text:           #e2e8f0;
-    --text-h:         #f1f5f9;
+    --text:           #b0bec8;
+    --text-h:         #cbd5e1;
     --text-muted:     #64748b;
 
     --bg:             #12131a;
