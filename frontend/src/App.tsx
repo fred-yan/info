@@ -4,15 +4,11 @@ import NavBar from './components/NavBar';
 import { MultiPlatformPage } from './pages/MultiPlatformPage';
 import { HotspotPage } from './pages/HotspotPage';
 import PlatformStatus from './components/PlatformStatus';
+import { SettingsContext } from './contexts/SettingsContext';
+import { useSettings } from './hooks/useSettings';
 
-interface ErrorBoundaryProps {
-  children: ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
+interface ErrorBoundaryProps  { children: ReactNode; }
+interface ErrorBoundaryState  { hasError: boolean; error: Error | null; }
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -24,9 +20,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return { hasError: true, error };
   }
 
-  handleReset = () => {
-    this.setState({ hasError: false, error: null });
-  };
+  handleReset = () => this.setState({ hasError: false, error: null });
 
   render() {
     if (this.state.hasError) {
@@ -34,9 +28,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         <div className="error-boundary-fallback" role="alert">
           <h1>应用出现错误</h1>
           <p>{this.state.error?.message || '未知错误'}</p>
-          <button type="button" onClick={this.handleReset}>
-            重试
-          </button>
+          <button type="button" onClick={this.handleReset}>重试</button>
         </div>
       );
     }
@@ -44,17 +36,27 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-function App() {
+function AppInner() {
+  const settings = useSettings();
+
   return (
-    <ErrorBoundary>
+    <SettingsContext.Provider value={settings}>
       <BrowserRouter>
         <NavBar />
         <Routes>
-          <Route path="/" element={<MultiPlatformPage />} />
-          <Route path="/keywords" element={<HotspotPage />} />
+          <Route path="/"          element={<MultiPlatformPage />} />
+          <Route path="/keywords"  element={<HotspotPage />} />
           <Route path="/platforms" element={<PlatformStatus />} />
         </Routes>
       </BrowserRouter>
+    </SettingsContext.Provider>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
     </ErrorBoundary>
   );
 }

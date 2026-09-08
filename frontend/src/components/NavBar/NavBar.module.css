@@ -1,12 +1,15 @@
 .navbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 1rem;
   height: 3rem;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #fff;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  background-color: var(--bg, #fff);
+  flex-shrink: 0;
 }
 
+/* ── Nav links ── */
 .navList {
   display: flex;
   gap: 1.5rem;
@@ -23,12 +26,54 @@
   transition: color 0.15s;
 }
 
-.navLink:hover {
-  color: #111827;
-}
+.navLink:hover { color: var(--text-h, #111827); }
 
 .active {
-  color: #111827;
+  color: var(--text-h, #111827);
   font-weight: 600;
-  border-bottom: 2px solid #2563eb;
+  border-bottom: 2px solid var(--accent, #2563eb);
+}
+
+/* ── Controls (font size + theme) ── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.separator {
+  width: 1px;
+  height: 1.1rem;
+  background: var(--border, #e5e7eb);
+  margin: 0 0.35rem;
+}
+
+.ctrlBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text, #6b7280);
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.ctrlBtn:hover {
+  background: var(--accent-bg, rgba(37,99,235,0.08));
+  color: var(--accent, #2563eb);
+}
+
+.ctrlBtnActive {
+  background: var(--accent-bg, rgba(37,99,235,0.12));
+  color: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  font-weight: 600;
 }

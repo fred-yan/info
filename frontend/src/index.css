@@ -1,17 +1,25 @@
+/* ── Font size control ──────────────────────────────────────────────────── */
+:root,
+[data-font-size="medium"] { font-size: 16px; }
+[data-font-size="small"]  { font-size: 14px; }
+[data-font-size="large"]  { font-size: 18px; }
+
+/* ── Light theme (default) ──────────────────────────────────────────────── */
 :root {
-  --text: #374151;
-  --text-h: #111827;
-  --bg: #f9fafb;
-  --border: #e5e7eb;
-  --accent: #2563eb;
-  --accent-bg: rgba(37, 99, 235, 0.1);
-  --error-bg: #fef2f2;
+  --text:       #374151;
+  --text-h:     #111827;
+  --bg:         #f9fafb;
+  --border:     #e5e7eb;
+  --accent:     #2563eb;
+  --accent-bg:  rgba(37, 99, 235, 0.1);
+  --error-bg:   #fef2f2;
   --error-text: #991b1b;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  font: 16px/1.5 var(--sans);
+  line-height: 1.5;
+  font-family: var(--sans);
   color-scheme: light dark;
   color: var(--text);
   background: var(--bg);
@@ -21,19 +29,35 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Dark theme — manual override ───────────────────────────────────────── */
+[data-theme="dark"] {
+  --text:       #d1d5db;
+  --text-h:     #f3f4f6;
+  --bg:         #111827;
+  --border:     #374151;
+  --accent:     #60a5fa;
+  --accent-bg:  rgba(96, 165, 250, 0.15);
+  --error-bg:   #451a1a;
+  --error-text: #fca5a5;
+  color-scheme: dark;
+}
+
+/* ── Dark theme — follow system (only when no manual override) ──────────── */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --text: #d1d5db;
-    --text-h: #f3f4f6;
-    --bg: #111827;
-    --border: #374151;
-    --accent: #60a5fa;
-    --accent-bg: rgba(96, 165, 250, 0.15);
-    --error-bg: #451a1a;
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --text:       #d1d5db;
+    --text-h:     #f3f4f6;
+    --bg:         #111827;
+    --border:     #374151;
+    --accent:     #60a5fa;
+    --accent-bg:  rgba(96, 165, 250, 0.15);
+    --error-bg:   #451a1a;
     --error-text: #fca5a5;
+    color-scheme: dark;
   }
 }
 
+/* ── Base reset ─────────────────────────────────────────────────────────── */
 *,
 *::before,
 *::after {
@@ -42,6 +66,8 @@
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--text);
 }
 
 #root {
@@ -56,6 +82,7 @@ h1, h2, h3 {
   margin: 0;
 }
 
+/* ── Error boundary ─────────────────────────────────────────────────────── */
 .error-boundary-fallback {
   display: flex;
   flex-direction: column;
