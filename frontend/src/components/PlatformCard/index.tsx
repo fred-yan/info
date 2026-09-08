@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { usePlatformLatest } from '../../hooks/usePlatformLatest';
 import type { LatestArticle, ArticleCard } from '../../types';
 import styles from './PlatformCard.module.css';
@@ -204,11 +204,21 @@ interface PlatformCardGroupProps {
   platform: string;
   label: string;
   updateInterval?: string;
+  onStatusChange?: (platform: string, status: 'loading' | 'ok' | 'error' | 'empty') => void;
 }
 
-export function PlatformCardGroup({ platform, label, updateInterval }: PlatformCardGroupProps) {
+export function PlatformCardGroup({ platform, label, updateInterval, onStatusChange }: PlatformCardGroupProps) {
   const { data, loading, error, retry } = usePlatformLatest(platform);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Report status to parent for sorting
+  useEffect(() => {
+    if (!onStatusChange) return;
+    if (loading && !data) { onStatusChange(platform, 'loading'); return; }
+    if (error)             { onStatusChange(platform, 'error');   return; }
+    if (!data || data.cards.length === 0) { onStatusChange(platform, 'empty'); return; }
+    onStatusChange(platform, 'ok');
+  }, [loading, error, data, platform, onStatusChange]);
 
   const handleRefresh = useCallback(() => {
     if (refreshing) return;
