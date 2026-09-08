@@ -60,13 +60,15 @@ def _validate_stage1_result(
 
     # ── B: 序号一致性 + 标题回溯校验 ───────────────────────────
     expected_ids = set(seq_to_title.keys())
+    min_seq = min(expected_ids)
+    max_seq = max(expected_ids)
     for item in items:
         seq = item.get("id")
         if seq is None:
             warnings.append("[B] 存在 id=null 的条目，已跳过")
             continue
-        if seq < 1 or seq > len(batch):
-            warnings.append(f"[B] id={seq} 超出范围 [1,{len(batch)}]，已跳过")
+        if seq < min_seq or seq > max_seq:
+            warnings.append(f"[B] id={seq} 超出范围 [{min_seq},{max_seq}]，已跳过")
             continue
         if seq in seen_ids:
             warnings.append(f"[B] id={seq} 重复出现，已跳过")
@@ -91,7 +93,6 @@ def _validate_stage1_result(
     missing_ids = expected_ids - seen_ids
     if missing_ids:
         errors.append(f"[A] 缺失序号: {sorted(missing_ids)}")
-
     # ── C: 短语来源校验（警告级别）────────────────────────────
     for item in valid_items:
         seq = item.get("id")
