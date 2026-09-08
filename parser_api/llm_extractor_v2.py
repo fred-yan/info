@@ -813,6 +813,12 @@ def _get_recent_articles(platforms: list[str]) -> dict[str, list]:
 def _call_llm(extractor: NewsPhraseExtractor, system_prompt: str, user_prompt: str,
               group: str = "", batch_index: int = 0, analysis_time=None) -> dict | None:
     """Call LLM with retry and error handling."""
+    import time as _time
+    stage = "Stage2" if batch_index >= 900 else f"Stage1"
+    prefix = f"[LLM] group={group} {stage} batch={batch_index}"
+    t0 = _time.monotonic()
+    logger.info("%s 开始调用 model=%s max_tokens=%d input_len=%d",
+                prefix, extractor.config.MODEL, extractor.config.MAX_TOKENS, len(user_prompt))
     try:
         response = extractor.client.chat.completions.create(
             model=extractor.config.MODEL,
@@ -827,16 +833,20 @@ def _call_llm(extractor: NewsPhraseExtractor, system_prompt: str, user_prompt: s
 
         raw = response.choices[0].message.content
         finish_reason = response.choices[0].finish_reason
+        elapsed = _time.monotonic() - t0
 
-        # Log token usage
         if response.usage:
-            logger.info("LLM tokens: prompt=%d, completion=%d, total=%d",
-                       response.usage.prompt_tokens, response.usage.completion_tokens,
+            logger.info("%s 调用完成 elapsed=%.1fs finish=%s tokens(prompt=%d completion=%d total=%d)",
+                       prefix, elapsed, finish_reason,
+                       response.usage.prompt_tokens,
+                       response.usage.completion_tokens,
                        response.usage.total_tokens)
+        else:
+            logger.info("%s 调用完成 elapsed=%.1fs finish=%s", prefix, elapsed, finish_reason)
 
         # Handle empty content
         if not raw or not raw.strip():
-            logger.warning("LLM returned empty content, retrying...")
+            logger.warning("%s 返回空内容，重试...", prefix)
             response = extractor.client.chat.completions.create(
                 model=extractor.config.MODEL,
                 messages=[
@@ -850,14 +860,15 @@ def _call_llm(extractor: NewsPhraseExtractor, system_prompt: str, user_prompt: s
             raw = response.choices[0].message.content
             finish_reason = response.choices[0].finish_reason
             if not raw or not raw.strip():
-                logger.error("LLM returned empty after retry")
+                logger.error("%s 重试后仍返回空内容", prefix)
                 return None
 
         if finish_reason == "length":
-            logger.warning("LLM output truncated (finish_reason=length)")
+            logger.warning("%s 输出被截断（finish_reason=length），丢弃本批结果", prefix)
             return None
 
         result = json.loads(raw)
+        logger.info("%s 解析成功 output_keys=%s", prefix, list(result.keys())[:5])
 
         # Save batch log
         if analysis_time:
@@ -875,7 +886,8 @@ def _call_llm(extractor: NewsPhraseExtractor, system_prompt: str, user_prompt: s
         return result
 
     except Exception as e:
-        logger.error("LLM call failed: %s", e)
+        elapsed = _time.monotonic() - t0
+        logger.error("%s 调用异常 elapsed=%.1fs error=%s", prefix, elapsed, e)
         if analysis_time:
             try:
                 close_old_connections()
