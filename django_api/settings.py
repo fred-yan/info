@@ -23,6 +23,10 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+# 时区配置
+USE_TZ = True
+TIME_ZONE = 'Asia/Shanghai'
+
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.auth',
