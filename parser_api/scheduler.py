@@ -3,6 +3,7 @@
 使用 APScheduler 实现定时抓取新闻数据
 """
 import logging
+import os
 import threading
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -12,6 +13,85 @@ from django.conf import settings
 import time
 
 logger = logging.getLogger(__name__)
+
+# 唯一标识当前 worker 进程，用于日志区分
+_WORKER_ID = f"pid-{os.getpid()}"
+
+# 任务默认锁超时时间（秒）：正常任务 10 分钟，LLM 分析 60 分钟
+_DEFAULT_LOCK_TTL = 600
+_LLM_LOCK_TTL = 3600
+
+
+def _try_acquire_lock(task_name: str, ttl_seconds: int = _DEFAULT_LOCK_TTL) -> bool:
+    """
+    尝试获取分布式任务锁（基于 MySQL）。
+
+    原理：
+      - 用 SchedulerLock 表的 task_name 作为锁键（primary key）
+      - 若该锁不存在 → INSERT 成功 → 获锁
+      - 若该锁存在但已过期（locked_at + ttl < now）→ UPDATE 成功 → 获锁
+      - 若该锁存在且未过期 → 跳过（另一个 worker 正在执行）
+
+    使用 select_for_update() + 事务保证原子性。
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from .models import SchedulerLock
+
+    now = timezone.now()
+    expire_before = now - timedelta(seconds=ttl_seconds)
+
+    try:
+        with transaction.atomic():
+            # 尝试获取行锁
+            lock_qs = SchedulerLock.objects.select_for_update(nowait=True).filter(
+                task_name=task_name
+            )
+            existing = lock_qs.first()
+
+            if existing is None:
+                # 锁不存在，创建
+                SchedulerLock.objects.create(
+                    task_name=task_name,
+                    locked_at=now,
+                    worker_id=_WORKER_ID,
+                )
+                logger.info("[Lock] Acquired new lock: task=%s worker=%s", task_name, _WORKER_ID)
+                return True
+
+            if existing.locked_at <= expire_before:
+                # 锁已过期，更新
+                existing.locked_at = now
+                existing.worker_id = _WORKER_ID
+                existing.save(update_fields=["locked_at", "worker_id"])
+                logger.info("[Lock] Acquired expired lock: task=%s worker=%s expired_at=%s",
+                            task_name, _WORKER_ID, existing.locked_at)
+                return True
+
+            # 锁被其他 worker 持有且未过期
+            logger.info("[Lock] Skipped (locked by %s at %s): task=%s worker=%s",
+                        existing.worker_id, existing.locked_at.strftime("%H:%M:%S"),
+                        task_name, _WORKER_ID)
+            return False
+
+    except Exception as e:
+        # select_for_update(nowait=True) 在锁冲突时抛出 OperationalError，视为获锁失败
+        logger.info("[Lock] Failed to acquire (concurrent conflict): task=%s err=%s", task_name, e)
+        return False
+
+
+def _release_lock(task_name: str) -> None:
+    """任务完成后释放锁（将 locked_at 置为很久以前，使其立即过期）。"""
+    from django.utils import timezone
+    from datetime import timedelta
+    from .models import SchedulerLock
+    try:
+        SchedulerLock.objects.filter(
+            task_name=task_name,
+            worker_id=_WORKER_ID,
+        ).update(locked_at=timezone.now() - timedelta(days=1))
+    except Exception as e:
+        logger.warning("[Lock] Release failed: task=%s err=%s", task_name, e)
 
 # 全局调度器实例
 scheduler = None
@@ -125,8 +205,19 @@ def fetch_task_wrapper(platform: str, **kwargs):
         platform: 平台名称
         **kwargs: 额外参数（如 since 等）
     """
-    logger.info("[Scheduler] Starting task: %s", platform)
+    logger.info("[Scheduler] Starting task: %s worker=%s", platform, _WORKER_ID)
     start_time = time.time()
+
+    # LLM 分析任务用更长的锁超时
+    ttl = _LLM_LOCK_TTL if "keyword_analysis" in platform else _DEFAULT_LOCK_TTL
+    lock_key = f"task_{platform}"
+
+    if not _try_acquire_lock(lock_key, ttl):
+        logger.info("[Scheduler] Task skipped (lock held by another worker): %s", platform)
+        # 注意：跳过的任务也要更新 batch 计数，否则 LLM 分析永远等不到 done==total
+        if "keyword_analysis" not in platform:
+            _on_fetch_done()
+        return
 
     try:
         from parser_api import views
@@ -205,6 +296,7 @@ def fetch_task_wrapper(platform: str, **kwargs):
         logger.error("[Scheduler] Task error: %s error=%s (elapsed=%.1fs)",
                      platform, e, elapsed, exc_info=True)
     finally:
+        _release_lock(lock_key)
         if 'keyword_analysis' not in platform:
             _on_fetch_done()
 

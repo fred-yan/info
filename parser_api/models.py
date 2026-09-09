@@ -147,3 +147,22 @@ class LLMBatchLog(models.Model):
 
     def __str__(self):
         return f"{self.group} batch#{self.batch_index} titles={self.title_count} ok={self.success}"
+
+
+class SchedulerLock(models.Model):
+    """
+    分布式调度器锁表。
+    多个 Gunicorn worker 同时触发同一任务时，通过此表确保只有一个 worker 真正执行。
+    锁超时后（locked_at 距今超过 ttl_seconds）自动释放，防止任务崩溃导致锁永久占用。
+    """
+    task_name = models.CharField(max_length=128, primary_key=True, verbose_name="任务名")
+    locked_at = models.DateTimeField(verbose_name="加锁时间")
+    worker_id = models.CharField(max_length=64, blank=True, verbose_name="Worker标识")
+
+    class Meta:
+        db_table = "scheduler_lock"
+        verbose_name = "调度器锁"
+        verbose_name_plural = "调度器锁"
+
+    def __str__(self):
+        return f"{self.task_name} @ {self.locked_at}"
