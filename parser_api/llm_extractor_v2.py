@@ -112,8 +112,8 @@ def _validate_stage1_result(
         for phrase in item.get("extracted_phrases", []):
             if phrase and len(phrase) > 1 and phrase not in title:
                 warnings.append(
-                    f"[C] id={seq} extracted_phrase '{phrase}' "
-                    f"不在原标题中（可能为规范化产物，仅记录）"
+                    f"[C] id={seq} extracted_phrase '{phrase}' 不在原标题中 "
+                    f"| 原标题: '{title[:60]}'"
                 )
                 break  # 每条最多报一次，避免刷屏
 
