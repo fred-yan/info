@@ -45,9 +45,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 pip install openai pydantic gunicorn
 
-# 安装 Playwright 浏览器
-playwright install chromium
+# 安装 Playwright 浏览器（指定固定路径，确保 www-data 等非 root 用户也能访问）
+PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers playwright install chromium
 playwright install-deps
+sudo chmod -R 755 /opt/playwright-browsers
 ```
 
 ## 第四步：配置文件
@@ -155,6 +156,7 @@ ExecStart=/opt/info/.venv/bin/gunicorn django_api.wsgi:application \
   --timeout 600 \
   --access-logfile /opt/info/logs/gunicorn_access.log \
   --error-logfile /opt/info/logs/gunicorn_error.log
+Environment="PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers"
 Restart=always
 RestartSec=5
 
