@@ -120,3 +120,53 @@
   text-align: center;
   padding: 2rem;
 }
+
+/* ── Extract button & states ── */
+.extractBtn {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--accent, #2563eb);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent, #2563eb);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.extractBtn:hover {
+  background: var(--accent-bg, rgba(37,99,235,0.08));
+}
+
+.extractStatus {
+  font-size: 0.75rem;
+  color: var(--text-muted, #6b7280);
+  white-space: nowrap;
+}
+
+.extractDone {
+  font-size: 0.75rem;
+  color: #16a34a;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.extractError {
+  font-size: 0.75rem;
+  color: var(--error-text, #dc2626);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.extractResetBtn {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}

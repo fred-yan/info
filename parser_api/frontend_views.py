@@ -711,3 +711,72 @@ def llm_phrases_view(request):
     except Exception as exc:
         logger.error("llm_phrases error elapsed=%.2fs", time.monotonic() - t0, exc_info=True)
         return _json_response({"error": str(exc)}, status=500)
+
+
+def llm_extract_platform_view(request):
+    """
+    GET  /api/llm/extract/?platform=ftchinese
+         → 返回预估超时时间，不执行提取
+
+    POST /api/llm/extract/
+         body: {"platform": "ftchinese", "force": false}
+         → 执行单平台 LLM 短语提取，同步返回所有标题的提取结果
+
+    预估超时时间规则：每条标题约 1.5s，向上取整到10s整数倍，最少30s。
+    """
+    from .llm_platform_extractor import extract_phrases_for_platform, estimate_timeout
+    from .llm_extractor_tiny import LLMConfig
+    from django.db.models import Max as _Max
+
+    t0 = time.monotonic()
+
+    # ── GET: 只返回预估信息，不执行 ──────────────────────────────
+    if request.method == "GET":
+        platform = request.GET.get("platform", "").strip()
+        if not platform:
+            return _error_response("platform 参数必填")
+
+        latest = Info.objects.filter(platform=platform).aggregate(m=_Max("date"))["m"]
+        if not latest:
+            return _json_response({"platform": platform, "article_count": 0,
+                                   "estimated_timeout_seconds": 30})
+
+        from django.utils import timezone as _tz
+        article_count = Info.objects.filter(platform=platform, date=latest).count()
+        batch_size = LLMConfig.BATCH_SIZE
+        estimated = estimate_timeout(article_count, batch_size)
+
+        return _json_response({
+            "platform":                 platform,
+            "article_count":            article_count,
+            "batch_size":               batch_size,
+            "estimated_timeout_seconds": estimated,
+        })
+
+    # ── POST: 执行提取 ────────────────────────────────────────────
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    try:
+        body = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return _error_response("请求体必须是合法 JSON")
+
+    platform = (body.get("platform") or "").strip()
+    force = bool(body.get("force", False))
+
+    if not platform:
+        return _error_response("platform 参数必填")
+
+    logger.info("llm_extract_platform platform=%s force=%s", platform, force)
+
+    try:
+        result = extract_phrases_for_platform(platform, force=force)
+        result["request_elapsed_seconds"] = round(time.monotonic() - t0, 1)
+        logger.info("llm_extract_platform ok platform=%s articles=%d elapsed=%.1fs",
+                    platform, result.get("article_count", 0), result["request_elapsed_seconds"])
+        return _json_response(result)
+    except Exception as exc:
+        logger.error("llm_extract_platform error platform=%s elapsed=%.2fs",
+                     platform, time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc), "platform": platform}, status=500)
