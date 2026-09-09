@@ -34,4 +34,5 @@ urlpatterns = [
     path("news/feed/", frontend_views.news_feed_view),
     path("news/latest/", frontend_views.news_latest_view),
     path("platforms/", frontend_views.platforms_view),
+    path("llm/phrases/", frontend_views.llm_phrases_view),
 ]

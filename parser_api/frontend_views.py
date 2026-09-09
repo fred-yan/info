@@ -584,3 +584,102 @@ def news_latest_view(request):
     logger.info("news_latest ok platform=%s cards=%d fetch_age_hours=%.1f elapsed=%.2fs",
                 platform, len(cards), fetch_age_hours, time.monotonic() - t0)
     return _json_response({"cards": cards})
+
+
+def llm_phrases_view(request):
+    """
+    GET /api/llm/phrases/?platform=ftchinese&group=domestic&hours=12
+
+    查看每条标题的 LLM 短语提取结果。
+
+    参数：
+      platform  可选，按平台名过滤（如 ftchinese, kr36）
+      group     可选，按分组过滤（domestic / international）
+      hours     可选，默认 12，查最近 N 小时的提取结果
+      page      可选，默认 1
+      page_size 可选，默认 50，最大 200
+
+    返回：
+      [{
+        "article_id": 123,
+        "title": "xxx",
+        "platform": "ftchinese",
+        "article_date": "2026-09-09T06:00:00+00:00",
+        "analysis_time": "2026-09-09T13:00:00+00:00",
+        "extracted_phrases": ["M4芯片", "AI推理"],
+        "normalized_phrases": ["Apple M4", "AI推理加速"]
+      }, ...]
+    """
+    if request.method != "GET":
+        return HttpResponse(status=405)
+
+    t0 = time.monotonic()
+    platform_filter = request.GET.get("platform", "").strip()
+    group_filter = request.GET.get("group", "").strip()
+    hours = int(request.GET.get("hours", "12"))
+    page = max(int(request.GET.get("page", "1")), 1)
+    page_size = min(int(request.GET.get("page_size", "50")), 200)
+
+    logger.info("llm_phrases platform=%s group=%s hours=%d page=%d",
+                platform_filter, group_filter, hours, page)
+
+    try:
+        from .models import LLMPhraseExtraction
+        since = timezone.now() - timedelta(hours=hours)
+
+        # 查 LLMPhraseExtraction，按 analysis_time 倒序
+        qs = LLMPhraseExtraction.objects.filter(
+            analysis_time__gte=since,
+        ).select_related("article").order_by("-analysis_time", "article_id")
+
+        # 按 platform 过滤
+        if platform_filter:
+            qs = qs.filter(article__platform=platform_filter)
+
+        # 按 group 过滤（通过 PLATFORM_GROUPS 配置）
+        if group_filter and group_filter in ("domestic", "international"):
+            group_platforms = settings.PLATFORM_GROUPS.get(group_filter, {}).get("platforms", [])
+            if group_platforms:
+                qs = qs.filter(article__platform__in=group_platforms)
+
+        total = qs.count()
+        offset = (page - 1) * page_size
+        records = qs[offset:offset + page_size]
+
+        items = []
+        for ext in records:
+            article = ext.article
+            try:
+                extracted = json.loads(ext.extracted_phrases or "[]")
+            except (json.JSONDecodeError, TypeError):
+                extracted = []
+            try:
+                normalized = json.loads(ext.normalized_phrases or "[]")
+            except (json.JSONDecodeError, TypeError):
+                normalized = []
+
+            items.append({
+                "article_id":        article.id,
+                "title":             article.title,
+                "platform":          article.platform,
+                "article_date":      article.date.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "analysis_time":     ext.analysis_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "extracted_phrases": extracted,
+                "normalized_phrases": normalized,
+            })
+
+        logger.info("llm_phrases ok total=%d page=%d elapsed=%.2fs",
+                    total, page, time.monotonic() - t0)
+
+        return _json_response({
+            "total":     total,
+            "page":      page,
+            "page_size": page_size,
+            "has_next":  (offset + page_size) < total,
+            "hours":     hours,
+            "items":     items,
+        })
+
+    except Exception as exc:
+        logger.error("llm_phrases error elapsed=%.2fs", time.monotonic() - t0, exc_info=True)
+        return _json_response({"error": str(exc)}, status=500)
