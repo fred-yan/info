@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { usePlatformLatest } from '../../hooks/usePlatformLatest';
+import { apiClient } from '../../api/client';
 import type { LatestArticle, ArticleCard } from '../../types';
 import styles from './PlatformCard.module.css';
 
@@ -36,49 +37,136 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
   );
 }
 
-// ── Article row ───────────────────────────────────────────────────────────────
+// ── Article row — with phrase tooltip on index click ─────────────────────────
+
+interface ArticlePhrases {
+  extracted_phrases: string[];
+  normalized_phrases: string[];
+}
 
 function ArticleRow({ article }: { article: LatestArticle }) {
   const isTop = article.index <= 3;
+  const [phrases, setPhrases] = useState<ArticlePhrases | null>(null);
+  const [loadingPhrases, setLoadingPhrases] = useState(false);
+  const [showPhrases, setShowPhrases] = useState(false);
+
+  const handleIndexClick = useCallback(async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (showPhrases) {
+      setShowPhrases(false);
+      return;
+    }
+
+    if (phrases) {
+      setShowPhrases(true);
+      return;
+    }
+
+    if (!article.id) return;
+
+    setLoadingPhrases(true);
+    try {
+      const data = await apiClient.get<ArticlePhrases>('/llm/phrases/', {
+        article_id: String(article.id),
+      });
+      setPhrases(data);
+      setShowPhrases(true);
+    } catch {
+      setPhrases({ extracted_phrases: [], normalized_phrases: [] });
+      setShowPhrases(true);
+    } finally {
+      setLoadingPhrases(false);
+    }
+  }, [article.id, phrases, showPhrases]);
+
+  const allPhrases = phrases
+    ? [...new Set([...phrases.normalized_phrases, ...phrases.extracted_phrases])]
+    : [];
+
   return (
-    <a
-      href={article.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={article.title}
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '0.45rem',
-        padding: '0.42rem 0.75rem',
-        textDecoration: 'none',
-        color: 'inherit',
-      }}
-    >
-      <span style={{
-        flexShrink: 0,
-        width: '1.3rem',
-        textAlign: 'right',
-        fontSize: '0.78rem',
-        fontWeight: 700,
-        color: isTop ? 'var(--rank-top, #2563eb)' : 'var(--text-muted, #9ca3af)',
-        lineHeight: 1.45,
-        paddingTop: '0.02rem',
-      }}>
-        {article.index}
-      </span>
-      <span style={{
-        flex: 1,
-        minWidth: 0,
-        fontSize: '0.85rem',
-        lineHeight: 1.45,
-        color: 'var(--text, #374151)',
-        wordBreak: 'normal',       /* don't break in the middle of a word */
-        overflowWrap: 'break-word', /* only break a long word if it truly won't fit */
-      }}>
-        {article.title}
-      </span>
-    </a>
+    <div style={{ position: 'relative' }}>
+      <a
+        href={article.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={article.title}
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.45rem',
+          padding: '0.42rem 0.75rem',
+          textDecoration: 'none',
+          color: 'inherit',
+        }}
+      >
+        {/* Clickable index */}
+        <span
+          onClick={handleIndexClick}
+          title={showPhrases ? '收起短语' : '查看关键短语'}
+          style={{
+            flexShrink: 0,
+            width: '1.3rem',
+            textAlign: 'right',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            color: isTop ? 'var(--rank-top, #2563eb)' : 'var(--text-muted, #9ca3af)',
+            lineHeight: 1.45,
+            paddingTop: '0.02rem',
+            cursor: 'pointer',
+            userSelect: 'none',
+            opacity: loadingPhrases ? 0.5 : 1,
+          }}
+        >
+          {loadingPhrases ? '…' : article.index}
+        </span>
+        <span style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: '0.85rem',
+          lineHeight: 1.45,
+          color: 'var(--text, #374151)',
+          wordBreak: 'normal',
+          overflowWrap: 'break-word',
+        }}>
+          {article.title}
+        </span>
+      </a>
+
+      {/* Phrase tags — inline below the title */}
+      {showPhrases && (
+        <div style={{
+          padding: '0 0.75rem 0.45rem 2.2rem',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.3rem',
+        }}>
+          {allPhrases.length === 0 ? (
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #9ca3af)' }}>
+              暂无短语数据
+            </span>
+          ) : (
+            allPhrases.map((p) => (
+              <span
+                key={p}
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '3px',
+                  background: 'var(--accent-bg, rgba(37,99,235,0.1))',
+                  color: 'var(--accent, #2563eb)',
+                  border: '1px solid var(--accent-bg, rgba(37,99,235,0.2))',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {p}
+              </span>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -588,32 +588,60 @@ def news_latest_view(request):
 
 def llm_phrases_view(request):
     """
+    GET /api/llm/phrases/?article_id=123
     GET /api/llm/phrases/?platform=ftchinese&group=domestic&hours=12
 
-    查看每条标题的 LLM 短语提取结果。
-
-    参数：
-      platform  可选，按平台名过滤（如 ftchinese, kr36）
-      group     可选，按分组过滤（domestic / international）
-      hours     可选，默认 12，查最近 N 小时的提取结果
-      page      可选，默认 1
-      page_size 可选，默认 50，最大 200
-
-    返回：
-      [{
-        "article_id": 123,
-        "title": "xxx",
-        "platform": "ftchinese",
-        "article_date": "2026-09-09T06:00:00+00:00",
-        "analysis_time": "2026-09-09T13:00:00+00:00",
-        "extracted_phrases": ["M4芯片", "AI推理"],
-        "normalized_phrases": ["Apple M4", "AI推理加速"]
-      }, ...]
+    两种用法：
+    1. article_id：查单篇文章最新一次的短语提取结果（前端点击序号用）
+    2. platform/group：批量查某平台/分组最近 N 小时的提取结果
     """
     if request.method != "GET":
         return HttpResponse(status=405)
 
     t0 = time.monotonic()
+    article_id = request.GET.get("article_id", "").strip()
+
+    # ── 单文章查询 ────────────────────────────────────────────
+    if article_id:
+        logger.info("llm_phrases article_id=%s", article_id)
+        try:
+            from .models import LLMPhraseExtraction
+            ext = LLMPhraseExtraction.objects.filter(
+                article_id=int(article_id),
+            ).order_by("-analysis_time").first()
+
+            if not ext:
+                return _json_response({
+                    "article_id": int(article_id),
+                    "extracted_phrases": [],
+                    "normalized_phrases": [],
+                })
+
+            try:
+                extracted = json.loads(ext.extracted_phrases or "[]")
+            except (json.JSONDecodeError, TypeError):
+                extracted = []
+            try:
+                normalized = json.loads(ext.normalized_phrases or "[]")
+            except (json.JSONDecodeError, TypeError):
+                normalized = []
+
+            logger.info("llm_phrases ok article_id=%s phrases=%d elapsed=%.2fs",
+                        article_id, len(normalized), time.monotonic() - t0)
+            return _json_response({
+                "article_id":         ext.article_id,
+                "analysis_time":      ext.analysis_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "extracted_phrases":  extracted,
+                "normalized_phrases": normalized,
+            })
+        except (ValueError, TypeError):
+            return _error_response("article_id 必须为整数")
+        except Exception as exc:
+            logger.error("llm_phrases article_id=%s error elapsed=%.2fs",
+                         article_id, time.monotonic() - t0, exc_info=True)
+            return _json_response({"error": str(exc)}, status=500)
+
+    # ── 批量查询 ──────────────────────────────────────────────
     platform_filter = request.GET.get("platform", "").strip()
     group_filter = request.GET.get("group", "").strip()
     hours = int(request.GET.get("hours", "12"))
