@@ -1,4 +1,6 @@
 import os
+import time
+import logging
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -14,6 +16,9 @@ if _env_path.exists():
                 os.environ.setdefault(_key.strip(), _val.strip())
 
 os.makedirs(BASE_DIR / "logs", exist_ok=True)
+
+# 强制 logging 用本地时区输出时间戳（防止 systemd 环境下 UTC 缓存问题）
+logging.Formatter.converter = time.localtime
 
 SECRET_KEY = 'django-insecure-dev-only-key-change-in-production'
 
