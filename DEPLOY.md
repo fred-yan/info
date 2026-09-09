@@ -152,7 +152,7 @@ Environment="PATH=/opt/info/.venv/bin"
 ExecStart=/opt/info/.venv/bin/gunicorn django_api.wsgi:application \
   --bind 127.0.0.1:8000 \
   --workers 2 \
-  --timeout 120 \
+  --timeout 600 \
   --access-logfile /opt/info/logs/gunicorn_access.log \
   --error-logfile /opt/info/logs/gunicorn_error.log
 Restart=always
@@ -214,7 +214,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_connect_timeout 10s;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 620s;
     }
 }
 EOF
