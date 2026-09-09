@@ -62,11 +62,23 @@ def _validate_stage1_result(
     expected_ids = set(seq_to_title.keys())
     min_seq = min(expected_ids)
     max_seq = max(expected_ids)
+    # 构建局部序号→全局序号映射（用于 LLM 把全局序号重置为1-N的情况）
+    local_to_global = {i + 1: seq for i, (seq, _, _) in enumerate(batch)}
+
     for item in items:
         seq = item.get("id")
         if seq is None:
             warnings.append("[B] 存在 id=null 的条目，已跳过")
             continue
+        # 若 LLM 返回局部序号（1-N），自动映射回全局序号
+        if seq < min_seq and seq in local_to_global:
+            global_seq = local_to_global[seq]
+            warnings.append(
+                f"[B] id={seq} 为局部序号，自动映射为全局序号 {global_seq}"
+            )
+            seq = global_seq
+            item = dict(item)
+            item["id"] = seq
         if seq < min_seq or seq > max_seq:
             warnings.append(f"[B] id={seq} 超出范围 [{min_seq},{max_seq}]，已跳过")
             continue

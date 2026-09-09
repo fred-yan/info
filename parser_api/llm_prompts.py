@@ -48,6 +48,8 @@ STAGE1_SYSTEM_PROMPT = """你是一个新闻标题短语抽取助手。对输入
 
 STAGE1_USER_PROMPT_TEMPLATE = """请对以下 {count} 条新闻标题逐条进行短语抽取（共 {count} 条，输出 items 也必须恰好 {count} 个）：
 
+重要：输出中每个 item 的 id 必须与下方输入标题前面的序号完全一致，不得从1重新编号。
+
 {titles}
 """
 
