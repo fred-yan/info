@@ -17,9 +17,6 @@ if _env_path.exists():
 
 os.makedirs(BASE_DIR / "logs", exist_ok=True)
 
-# 强制 logging 用本地时区输出时间戳（防止 systemd 环境下 UTC 缓存问题）
-logging.Formatter.converter = time.localtime
-
 SECRET_KEY = 'django-insecure-dev-only-key-change-in-production'
 
 DEBUG = True
@@ -66,11 +63,19 @@ DATABASES = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# 自定义 Formatter，强制用本地时区输出时间戳
+# （标准 logging.Formatter 在某些 Gunicorn 环境下会输出 UTC）
+import logging as _logging
+
+class _LocalTimeFormatter(_logging.Formatter):
+    converter = time.localtime
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
         "standard": {
+            "()": _LocalTimeFormatter,
             "format": "[%(asctime)s] [%(levelname)s] [%(name)s] [%(filename)s:%(lineno)d] %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
