@@ -726,27 +726,86 @@ def llm_extract_platform_view(request):
 
     t0 = time.monotonic()
 
-    # ── GET: 只返回预估信息，不执行 ──────────────────────────────
+    # ── GET: 只返回预估信息和近期批次列表，不执行 ──────────────────────────────
     if request.method == "GET":
         platform = request.GET.get("platform", "").strip()
         if not platform:
             return _error_response("platform 参数必填")
 
+        from datetime import timedelta
+        from django.db.models import Max as _Max, Count as _Count
+
+        now_ts = timezone.now()
+        since_3d = now_ts - timedelta(days=3)
+
+        # 最新批次用于预估超时
         latest = Info.objects.filter(platform=platform).aggregate(m=_Max("date"))["m"]
         if not latest:
-            return _json_response({"platform": platform, "article_count": 0,
-                                   "estimated_timeout_seconds": 30})
+            return _json_response({
+                "platform": platform,
+                "article_count": 0,
+                "estimated_timeout_seconds": 30,
+                "available_batches": [],
+            })
 
-        from django.utils import timezone as _tz
-        article_count = Info.objects.filter(platform=platform, date=latest).count()
         batch_size = LLMConfig.BATCH_SIZE
+        article_count = Info.objects.filter(platform=platform, date=latest).count()
         estimated = estimate_timeout(article_count, batch_size)
 
+        # 近3天内所有批次：按 date 分组（date 截断到分钟，每组视为一个批次）
+        # 注意：zaobao/github 等多任务写同一时段，date 可能略有差异，
+        #       待 Info.batch_id 字段上线后改为按 batch_id 分组
+        batch_rows = (
+            Info.objects.filter(platform=platform, date__gte=since_3d)
+            .values("date")
+            .annotate(article_count=_Count("id"))
+            .order_by("-date")
+        )
+
+        # 将每个 date 转换为 batch_id 格式（YYYYMMDD_HHMM），合并同分钟的记录
+        batch_map: dict[str, dict] = {}
+        for row in batch_rows:
+            bid = row["date"].strftime("%Y%m%d_%H%M")
+            if bid not in batch_map:
+                batch_map[bid] = {
+                    "batch_id": bid,
+                    "fetch_time": row["date"].strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                    "article_count": 0,
+                    "extracted": False,
+                }
+            batch_map[bid]["article_count"] += row["article_count"]
+
+        # 查哪些批次已有 LLM 短语提取记录（通过 analysis_time 近3天内的记录）
+        from .models import LLMPhraseExtraction
+        extracted_times = (
+            LLMPhraseExtraction.objects
+            .filter(
+                article__platform=platform,
+                analysis_time__gte=since_3d,
+            )
+            .values_list("analysis_time", flat=True)
+            .distinct()
+        )
+        # 将 analysis_time 转为 YYYYMMDD_HHMM 集合，与 batch_id 对比
+        extracted_batch_ids = {t.strftime("%Y%m%d_%H%M") for t in extracted_times}
+
+        available_batches = []
+        for bid, info in batch_map.items():
+            available_batches.append({
+                "batch_id": bid,
+                "fetch_time": info["fetch_time"],
+                "article_count": info["article_count"],
+                "extracted": bid in extracted_batch_ids,
+            })
+
+        available_batches.sort(key=lambda x: x["fetch_time"], reverse=True)
+
         return _json_response({
-            "platform":                 platform,
-            "article_count":            article_count,
-            "batch_size":               batch_size,
+            "platform":                  platform,
+            "article_count":             article_count,
+            "batch_size":                batch_size,
             "estimated_timeout_seconds": estimated,
+            "available_batches":         available_batches,
         })
 
     # ── POST: 执行提取 ────────────────────────────────────────────
