@@ -74,6 +74,12 @@ _TASK_TO_DB_PLATFORM = {
     'hacker_news':             'hackernews',  # 数据库里无下划线
 }
 
+# 反向映射：db_platform → 所有对应的调度任务名列表
+# 用于"同一 db_platform 的所有 fetch 全部完成才解锁 llm_extract"
+_DB_PLATFORM_TO_FETCH_TASKS: dict[str, list[str]] = {}
+for _t, _p in _TASK_TO_DB_PLATFORM.items():
+    _DB_PLATFORM_TO_FETCH_TASKS.setdefault(_p, []).append(_t)
+
 # 任务轮询间隔（秒）
 _POLL_INTERVAL = 10
 
@@ -348,16 +354,9 @@ def _on_task_done(task):
     from .models import SchedulerTask
 
     if task.task_type == SchedulerTask.TYPE_FETCH:
-        # fetch 完成 → 对应平台的 llm_extract 从 waiting 改为 pending
-        updated = SchedulerTask.objects.filter(
-            batch_id=task.batch_id,
-            task_type=SchedulerTask.TYPE_LLM_EXTRACT,
-            platform=task.platform,
-            status=SchedulerTask.STATUS_WAITING,
-        ).update(status=SchedulerTask.STATUS_PENDING)
-        if updated:
-            logger.info("[Scheduler] Unlocked llm_extract for platform=%s batch=%s",
-                        task.platform, task.batch_id)
+        # 检查同一 db_platform 的所有 fetch 是否全部结束（done/failed/skipped）
+        # 全部结束才解锁 llm_extract，确保所有相关数据都已写入 DB
+        _maybe_unlock_llm_extract(task.batch_id, task.platform)
 
     elif task.task_type == SchedulerTask.TYPE_LLM_EXTRACT:
         # llm_extract 完成 → 检查是否所有 llm_extract 都结束
@@ -369,25 +368,97 @@ def _on_task_failed(task):
     from .models import SchedulerTask
 
     if task.task_type == SchedulerTask.TYPE_FETCH:
-        # fetch 永久失败 → 对应 llm_extract 标记为 skipped
-        SchedulerTask.objects.filter(
-            batch_id=task.batch_id,
-            task_type=SchedulerTask.TYPE_LLM_EXTRACT,
-            platform=task.platform,
-            status=SchedulerTask.STATUS_WAITING,
-        ).update(
-            status=SchedulerTask.STATUS_SKIPPED,
-            error_msg=f'skipped: upstream fetch failed for platform {task.platform}',
-            finished_at=timezone.now(),
-        )
-        logger.warning("[Scheduler] Skipped llm_extract for platform=%s (fetch failed) batch=%s",
-                       task.platform, task.batch_id)
-        # 跳过后仍需检查是否可以推进 llm_cluster
-        _check_and_unlock_cluster(task.batch_id)
+        # 同一 db_platform 的所有 fetch 都结束（含本次失败）才处理 llm_extract
+        _maybe_unlock_llm_extract(task.batch_id, task.platform)
 
     elif task.task_type == SchedulerTask.TYPE_LLM_EXTRACT:
         # llm_extract 永久失败 → 检查是否可以推进 llm_cluster
         _check_and_unlock_cluster(task.batch_id)
+
+
+def _maybe_unlock_llm_extract(batch_id: str, completed_platform: str):
+    """
+    某个 fetch 任务完成或失败后调用。
+    检查同一 db_platform 的所有 fetch 任务是否全部结束：
+      - 若全部结束且至少一个成功(done) → 解锁对应 llm_extract（→ pending）
+      - 若全部结束但全部失败/跳过     → 将 llm_extract 标记为 skipped
+      - 若还有未完成的                 → 等待，不做任何操作
+    """
+    from .models import SchedulerTask
+
+    db_platform = _TASK_TO_DB_PLATFORM.get(completed_platform, completed_platform)
+
+    # 找出同一 db_platform 下所有的调度任务名
+    sibling_task_names = _DB_PLATFORM_TO_FETCH_TASKS.get(db_platform)
+    if sibling_task_names:
+        # 有多个 fetch 任务对应同一 db_platform（如 zaobao/zaobao_hotlist）
+        all_fetch_platforms = sibling_task_names + [
+            t for t in [db_platform] if t not in sibling_task_names
+        ]
+        # 还需包含 db_platform 本身（它可能也是一个任务名，如 zaobao）
+        all_fetch_platforms = list(set(sibling_task_names) | {completed_platform})
+        # 再加上所有映射到该 db_platform 的任务名
+        for t, p in _TASK_TO_DB_PLATFORM.items():
+            if p == db_platform:
+                all_fetch_platforms.append(t)
+        all_fetch_platforms = list(set(all_fetch_platforms))
+    else:
+        all_fetch_platforms = [completed_platform]
+
+    # 检查这些 fetch 任务是否还有未结束的
+    still_running = SchedulerTask.objects.filter(
+        batch_id=batch_id,
+        task_type=SchedulerTask.TYPE_FETCH,
+        platform__in=all_fetch_platforms,
+        status__in=[SchedulerTask.STATUS_PENDING,
+                    SchedulerTask.STATUS_WAITING,
+                    SchedulerTask.STATUS_RUNNING],
+    ).exists()
+
+    if still_running:
+        logger.info("[Scheduler] Waiting for sibling fetch tasks before llm_extract: "
+                    "db_platform=%s batch=%s", db_platform, batch_id)
+        return
+
+    # 所有相关 fetch 都结束了，检查是否有成功的
+    any_succeeded = SchedulerTask.objects.filter(
+        batch_id=batch_id,
+        task_type=SchedulerTask.TYPE_FETCH,
+        platform__in=all_fetch_platforms,
+        status=SchedulerTask.STATUS_DONE,
+    ).exists()
+
+    # llm_extract 的 platform 字段用的是各自的调度任务名，需逐一处理
+    for fetch_platform in all_fetch_platforms:
+        if any_succeeded:
+            updated = SchedulerTask.objects.filter(
+                batch_id=batch_id,
+                task_type=SchedulerTask.TYPE_LLM_EXTRACT,
+                platform=fetch_platform,
+                status=SchedulerTask.STATUS_WAITING,
+            ).update(status=SchedulerTask.STATUS_PENDING)
+            if updated:
+                logger.info("[Scheduler] Unlocked llm_extract: platform=%s db_platform=%s batch=%s",
+                            fetch_platform, db_platform, batch_id)
+        else:
+            # 所有相关 fetch 都失败，跳过 llm_extract
+            SchedulerTask.objects.filter(
+                batch_id=batch_id,
+                task_type=SchedulerTask.TYPE_LLM_EXTRACT,
+                platform=fetch_platform,
+                status=SchedulerTask.STATUS_WAITING,
+            ).update(
+                status=SchedulerTask.STATUS_SKIPPED,
+                error_msg=f'skipped: all fetch tasks failed for db_platform={db_platform}',
+                finished_at=timezone.now(),
+            )
+            logger.warning("[Scheduler] Skipped llm_extract: platform=%s "
+                           "db_platform=%s (all fetch failed) batch=%s",
+                           fetch_platform, db_platform, batch_id)
+
+    if not any_succeeded:
+        # 全部跳过后检查是否可以推进 llm_cluster
+        _check_and_unlock_cluster(batch_id)
 
 
 def _check_and_unlock_cluster(batch_id: str):
