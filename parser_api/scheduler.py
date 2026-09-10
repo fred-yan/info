@@ -64,6 +64,16 @@ _PLATFORM_FETCH_TIMEOUT = {
     'github_trending_monthly': 360,
 }
 
+# 调度器任务名 → 数据库 Info.platform 字段值的映射
+# 部分任务名与写入数据库时的 platform 字段不一致，llm_extract 需用实际字段值查库
+_TASK_TO_DB_PLATFORM = {
+    'zaobao_hotlist':          'zaobao',      # hotlist 也写入 platform="zaobao"
+    'github_trending_daily':   'github',
+    'github_trending_weekly':  'github',
+    'github_trending_monthly': 'github',
+    'hacker_news':             'hackernews',  # 数据库里无下划线
+}
+
 # 任务轮询间隔（秒）
 _POLL_INTERVAL = 10
 
@@ -470,14 +480,17 @@ def _run_llm_extract(task):
     from django.db import close_old_connections
     from parser_api.llm_platform_extractor import extract_phrases_for_platform
 
+    # 调度器任务名可能与数据库 platform 字段不一致，需转换
+    db_platform = _TASK_TO_DB_PLATFORM.get(task.platform, task.platform)
+
     close_old_connections()
-    result = extract_phrases_for_platform(task.platform, force=False)
+    result = extract_phrases_for_platform(db_platform, force=False)
 
     if result.get('error') and not result.get('skipped_by_cache'):
         raise RuntimeError(f"LLM extract error: {result['error']}")
 
-    logger.info("[Scheduler] llm_extract done: platform=%s articles=%d elapsed=%.1fs cached=%s",
-                task.platform,
+    logger.info("[Scheduler] llm_extract done: task=%s db_platform=%s articles=%d elapsed=%.1fs cached=%s",
+                task.platform, db_platform,
                 result.get('article_count', 0),
                 result.get('elapsed_seconds', 0),
                 result.get('skipped_by_cache', False))
