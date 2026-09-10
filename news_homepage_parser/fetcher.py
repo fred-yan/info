@@ -4,6 +4,12 @@ import logging
 import threading
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
+try:
+    from playwright_stealth import stealth_sync
+    _STEALTH_AVAILABLE = True
+except ImportError:
+    _STEALTH_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # 限制同时运行的 Playwright 实例数，防止并发过多时内存/shm耗尽
@@ -90,7 +96,7 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
+                        "Chrome/128.0.0.0 Safari/537.36"
                     ),
                     extra_http_headers={
                         "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -103,11 +109,24 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
                     viewport={"width": 1920, "height": 1080},
                     locale="zh-CN",
                 )
-                # 隐藏 webdriver 标志，绕过 headless 检测
-                context.add_init_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-                )
+                # 反自动化检测：优先用 playwright-stealth，不可用时回退手写脚本
                 page = context.new_page()
+                if _STEALTH_AVAILABLE:
+                    stealth_sync(page)
+                    logger.debug("fetch stealth=playwright-stealth url=%s", url)
+                else:
+                    context.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                        Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+                        Object.defineProperty(navigator, 'languages', {get: () => ['zh-CN', 'zh', 'en-US', 'en']});
+                        window.chrome = {runtime: {}};
+                        const originalQuery = window.navigator.permissions.query;
+                        window.navigator.permissions.query = (parameters) =>
+                            parameters.name === 'notifications'
+                                ? Promise.resolve({state: Notification.permission})
+                                : originalQuery(parameters);
+                    """)
+                    logger.debug("fetch stealth=inline-script url=%s", url)
                 # wait_until="domcontentloaded" 只等 DOM 解析完成，不等后台请求
                 response = page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
                 if response is None:
