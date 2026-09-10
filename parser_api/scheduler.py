@@ -555,7 +555,8 @@ def _run_llm_extract(task):
     db_platform = _TASK_TO_DB_PLATFORM.get(task.platform, task.platform)
 
     close_old_connections()
-    result = extract_phrases_for_platform(db_platform, force=False)
+    result = extract_phrases_for_platform(db_platform, force=False,
+                                          batch_start=task.batch_id)
 
     if result.get('error') and not result.get('skipped_by_cache'):
         raise RuntimeError(f"LLM extract error: {result['error']}")

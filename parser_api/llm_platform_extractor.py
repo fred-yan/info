@@ -32,7 +32,8 @@ def estimate_timeout(article_count: int, batch_size: int) -> int:
     return max(30, math.ceil(estimated / 10) * 10)
 
 
-def extract_phrases_for_platform(platform: str, force: bool = False) -> dict:
+def extract_phrases_for_platform(platform: str, force: bool = False,
+                                  batch_start: str | None = None) -> dict:
     """
     对单个平台的最新一批文章做 LLM 短语提取（仅阶段1）。
 
@@ -40,36 +41,42 @@ def extract_phrases_for_platform(platform: str, force: bool = False) -> dict:
     - 文章数 <= batch_size 时一次性发送，否则分批
     - 12小时缓存：若平台文章均已有缓存且 force=False，跳过
 
+    Args:
+        platform:    平台名（数据库 Info.platform 字段值）
+        force:       是否强制重新分析（忽略缓存）
+        batch_start: 批次开始时间字符串（格式 "YYYYMMDD_HHMM"），用于限定数据窗口。
+                     传入时只取该时间之后写入的文章，避免跨批次混入。
+                     不传时取最新一批（Max date）。
+
     返回：
     {
         "platform": "ftchinese",
-        "article_count": 20,
-        "batch_size": 25,
-        "batches": 1,
-        "estimated_timeout_seconds": 60,
-        "elapsed_seconds": 18.3,
-        "results": [
-            {"article_id": 123, "title": "xxx", "extracted_phrases": [...], "normalized_phrases": [...]},
-            ...
-        ],
-        "skipped_by_cache": false,
-        "error": null
+        ...
     }
     """
     t0 = _time.monotonic()
     now = timezone.now()
     batch_size = LLMConfig.BATCH_SIZE
 
-    # 1. 取该平台当天（过去8小时内）写入的所有文章
-    # 不用 Max("date") 单批，避免 zaobao/zaobao_hotlist 等多任务写入不同 date 时漏掉数据
+    # 1. 取该平台本批次写入的文章
+    # 优先用 batch_start 时间作为下界，精确匹配本批次数据，避免跨批次混入
+    # 没有 batch_start 时兜底取 Max(date) 最新一批
     from datetime import timedelta
-    window_start = now - timedelta(hours=8)
-    articles = list(
-        Info.objects.filter(platform=platform, date__gte=window_start)
-        .order_by("section", "rank", "id")
-    )
+    articles = []
+    if batch_start:
+        try:
+            batch_dt = timezone.datetime.strptime(batch_start, '%Y%m%d_%H%M')
+            batch_dt = timezone.make_aware(batch_dt)
+            articles = list(
+                Info.objects.filter(platform=platform, date__gte=batch_dt)
+                .order_by("section", "rank", "id")
+            )
+            logger.debug("extract_phrases_for_platform batch_start=%s found=%d platform=%s",
+                         batch_start, len(articles), platform)
+        except ValueError:
+            logger.warning("extract_phrases_for_platform invalid batch_start=%s, fallback to Max(date)", batch_start)
+
     if not articles:
-        # 兜底：取最新一批
         latest = Info.objects.filter(platform=platform).aggregate(m=Max("date"))["m"]
         if not latest:
             return {
