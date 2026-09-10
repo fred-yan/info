@@ -752,19 +752,37 @@ def llm_extract_platform_view(request):
         article_count = Info.objects.filter(platform=platform, date=latest).count()
         estimated = estimate_timeout(article_count, batch_size)
 
-        # 近3天内所有批次：按 date 分组（date 截断到分钟，每组视为一个批次）
-        # 注意：zaobao/github 等多任务写同一时段，date 可能略有差异，
-        #       待 Info.batch_id 字段上线后改为按 batch_id 分组
-        batch_rows = (
+        # 近3天内所有批次：优先按 batch_id 分组（新数据），兼容 batch_id 为空的历史数据
+        # 新数据（调度器抓取）batch_id 格式如 "20260910_1800"
+        # 历史数据 batch_id 为空，用 date 精确到分钟作为 key
+
+        # 分两部分查：有 batch_id 的按 batch_id 聚合，没有的按 date 聚合
+        from django.db.models import Q
+        batch_map: dict[str, dict] = {}
+
+        # 有 batch_id 的记录
+        for row in (
             Info.objects.filter(platform=platform, date__gte=since_3d)
+            .exclude(batch_id='')
+            .values("batch_id")
+            .annotate(article_count=_Count("id"), last_date=Max("date"))
+            .order_by("-last_date")
+        ):
+            bid = row["batch_id"]
+            batch_map[bid] = {
+                "batch_id": bid,
+                "fetch_time": row["last_date"].strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                "article_count": row["article_count"],
+                "extracted": False,
+            }
+
+        # 历史数据（batch_id 为空），按 date 分钟聚合
+        for row in (
+            Info.objects.filter(platform=platform, date__gte=since_3d, batch_id='')
             .values("date")
             .annotate(article_count=_Count("id"))
             .order_by("-date")
-        )
-
-        # 将每个 date 转换为 batch_id 格式（YYYYMMDD_HHMM），合并同分钟的记录
-        batch_map: dict[str, dict] = {}
-        for row in batch_rows:
+        ):
             bid = row["date"].strftime("%Y%m%d_%H%M")
             if bid not in batch_map:
                 batch_map[bid] = {
@@ -819,14 +837,19 @@ def llm_extract_platform_view(request):
 
     platform = (body.get("platform") or "").strip()
     force = bool(body.get("force", False))
+    batch_id = (body.get("batch_id") or "").strip()
 
     if not platform:
         return _error_response("platform 参数必填")
 
-    logger.info("llm_extract_platform platform=%s force=%s", platform, force)
+    # 手动触发时未传 batch_id，生成 human_{YYYYMMDD_HHMM} 作为标识
+    if not batch_id:
+        batch_id = "human_" + timezone.localtime(timezone.now()).strftime("%Y%m%d_%H%M")
+
+    logger.info("llm_extract_platform platform=%s force=%s batch_id=%s", platform, force, batch_id)
 
     try:
-        result = extract_phrases_for_platform(platform, force=force)
+        result = extract_phrases_for_platform(platform, force=force, batch_start=batch_id)
         result["request_elapsed_seconds"] = round(time.monotonic() - t0, 1)
         logger.info("llm_extract_platform ok platform=%s articles=%d elapsed=%.1fs",
                     platform, result.get("article_count", 0), result["request_elapsed_seconds"])

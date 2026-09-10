@@ -170,3 +170,36 @@
   color: inherit;
   cursor: pointer;
 }
+
+/* ── Batch selector ── */
+.extractSelector {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: nowrap;
+}
+
+.batchSelect {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #374151);
+  cursor: pointer;
+  max-width: 160px;
+}
+
+.batchSelect:focus {
+  outline: 2px solid var(--accent, #2563eb);
+  outline-offset: 1px;
+}
+
+.batchTag {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  background: var(--accent-bg, rgba(37,99,235,0.1));
+  color: var(--accent, #2563eb);
+  white-space: nowrap;
+}

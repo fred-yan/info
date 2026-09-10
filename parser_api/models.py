@@ -14,6 +14,7 @@ class Info(models.Model):
     section = models.CharField(max_length=64, blank=True, verbose_name="栏目")
     ranktime = models.CharField(max_length=32, blank=True, verbose_name="榜单时间范围")
     
+    batch_id = models.CharField(max_length=32, blank=True, default='', verbose_name="批次ID")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
     
@@ -24,6 +25,7 @@ class Info(models.Model):
         ordering = ["-date", "-rank"]
         indexes = [
             models.Index(fields=["platform", "date"]),
+            models.Index(fields=["platform", "batch_id"]),
             models.Index(fields=["platform", "ranktime"]),
             models.Index(fields=["section"]),
         ]

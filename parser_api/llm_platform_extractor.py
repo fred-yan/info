@@ -44,37 +44,42 @@ def extract_phrases_for_platform(platform: str, force: bool = False,
     Args:
         platform:    平台名（数据库 Info.platform 字段值）
         force:       是否强制重新分析（忽略缓存）
-        batch_start: 批次开始时间字符串（格式 "YYYYMMDD_HHMM"），用于限定数据窗口。
-                     传入时只取该时间之后写入的文章，避免跨批次混入。
-                     不传时取最新一批（Max date）。
-
-    返回：
-    {
-        "platform": "ftchinese",
-        ...
-    }
+        batch_start: 批次ID（格式 "YYYYMMDD_HHMM" 或 "human_YYYYMMDD_HHMM"）。
+                     优先用 Info.batch_id 精确匹配本批次数据。
+                     不传时兜底取 Max(date) 最新一批。
     """
     t0 = _time.monotonic()
     now = timezone.now()
     batch_size = LLMConfig.BATCH_SIZE
 
     # 1. 取该平台本批次写入的文章
-    # 优先用 batch_start 时间作为下界，精确匹配本批次数据，避免跨批次混入
-    # 没有 batch_start 时兜底取 Max(date) 最新一批
-    from datetime import timedelta
+    # 1. 取本批次文章
+    # 优先用 batch_id 精确匹配（Info.batch_id 字段上线后），兜底按时间取最新一批
     articles = []
     if batch_start:
-        try:
-            batch_dt = timezone.datetime.strptime(batch_start, '%Y%m%d_%H%M')
-            batch_dt = timezone.make_aware(batch_dt)
-            articles = list(
-                Info.objects.filter(platform=platform, date__gte=batch_dt)
-                .order_by("section", "rank", "id")
-            )
-            logger.debug("extract_phrases_for_platform batch_start=%s found=%d platform=%s",
+        # 先尝试 batch_id 精确匹配（新数据）
+        articles = list(
+            Info.objects.filter(platform=platform, batch_id=batch_start)
+            .order_by("section", "rank", "id")
+        )
+        if articles:
+            logger.debug("extract_phrases_for_platform batch_id=%s found=%d platform=%s",
                          batch_start, len(articles), platform)
-        except ValueError:
-            logger.warning("extract_phrases_for_platform invalid batch_start=%s, fallback to Max(date)", batch_start)
+        else:
+            # 兜底：解析 batch_start 时间作为下界（历史数据 batch_id 为空）
+            try:
+                raw = batch_start.replace("human_", "")
+                batch_dt = timezone.datetime.strptime(raw, '%Y%m%d_%H%M')
+                batch_dt = timezone.make_aware(batch_dt)
+                articles = list(
+                    Info.objects.filter(platform=platform, date__gte=batch_dt)
+                    .order_by("section", "rank", "id")
+                )
+                logger.debug("extract_phrases_for_platform date fallback date>=%s found=%d platform=%s",
+                             batch_dt, len(articles), platform)
+            except ValueError:
+                logger.warning("extract_phrases_for_platform invalid batch_start=%s, fallback to Max(date)",
+                               batch_start)
 
     if not articles:
         latest = Info.objects.filter(platform=platform).aggregate(m=Max("date"))["m"]
@@ -88,6 +93,8 @@ def extract_phrases_for_platform(platform: str, force: bool = False,
             Info.objects.filter(platform=platform, date=latest)
             .order_by("section", "rank", "id")
         )
+        logger.debug("extract_phrases_for_platform max(date)=%s found=%d platform=%s",
+                     latest, len(articles), platform)
     article_count = len(articles)
     batches_count = math.ceil(article_count / batch_size)
     estimated_timeout = estimate_timeout(article_count, batch_size)

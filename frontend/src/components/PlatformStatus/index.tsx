@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { usePlatforms } from '../../hooks/usePlatforms';
 import { isStale } from '../../utils/transformations';
 import { apiClient } from '../../api/client';
@@ -7,9 +7,17 @@ import styles from './PlatformStatus.module.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+interface BatchInfo {
+  batch_id: string;
+  fetch_time: string;
+  article_count: number;
+  extracted: boolean;
+}
+
 interface ExtractEstimate {
   article_count: number;
   estimated_timeout_seconds: number;
+  available_batches: BatchInfo[];
 }
 
 interface ExtractResult {
@@ -27,39 +35,64 @@ interface ExtractResult {
 
 type ExtractState =
   | { status: 'idle' }
-  | { status: 'estimating' }
-  | { status: 'running'; timeout_seconds: number; start_at: number }
-  | { status: 'done'; data: ExtractResult }
+  | { status: 'loading_batches' }
+  | { status: 'selecting'; batches: BatchInfo[]; selectedBatch: string; timeout_seconds: number }
+  | { status: 'running'; timeout_seconds: number; start_at: number; batch_id: string }
+  | { status: 'done'; data: ExtractResult; batch_id: string }
   | { status: 'error'; message: string };
 
-// ── Extract button + result panel ────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function formatBatchId(bid: string): string {
+  // "20260910_1800" → "09-10 18:00"  |  "human_20260910_1835" → "手动 09-10 18:35"
+  const raw = bid.startsWith('human_') ? bid.slice(6) : bid;
+  const prefix = bid.startsWith('human_') ? '手动 ' : '';
+  const m = raw.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})$/);
+  if (!m) return bid;
+  return `${prefix}${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+}
+
+// ── Extract button + batch selector ─────────────────────────────────────────
 
 function ExtractCell({ platformName }: { platformName: string }) {
   const [state, setState] = useState<ExtractState>({ status: 'idle' });
 
-  const handleExtract = useCallback(async () => {
-    setState({ status: 'estimating' });
-
-    // Step 1: GET estimate
+  // Step 1: load available batches
+  const handleOpenSelector = useCallback(async () => {
+    setState({ status: 'loading_batches' });
     try {
       const est = await apiClient.get<ExtractEstimate>('/llm/extract/', {
         platform: platformName,
       });
-
-      if (est.article_count === 0) {
+      if (est.article_count === 0 && est.available_batches.length === 0) {
         setState({ status: 'error', message: '该平台暂无文章数据' });
         return;
       }
+      const batches = est.available_batches ?? [];
+      // 默认选最新批次
+      const defaultBatch = batches.length > 0 ? batches[0].batch_id : '';
+      setState({
+        status: 'selecting',
+        batches,
+        selectedBatch: defaultBatch,
+        timeout_seconds: est.estimated_timeout_seconds,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '获取批次失败';
+      setState({ status: 'error', message: msg });
+    }
+  }, [platformName]);
 
-      setState({ status: 'running', timeout_seconds: est.estimated_timeout_seconds, start_at: Date.now() });
-
-      // Step 2: POST extract
+  // Step 2: run extraction for selected batch
+  const handleExtract = useCallback(async (batchId: string, timeoutSecs: number) => {
+    setState({ status: 'running', timeout_seconds: timeoutSecs, start_at: Date.now(), batch_id: batchId });
+    try {
       const result = await apiClient.post<ExtractResult>('/llm/extract/', {
         platform: platformName,
         force: false,
+        batch_id: batchId || undefined,
       });
-
-      setState({ status: 'done', data: result });
+      setState({ status: 'done', data: result, batch_id: batchId });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '提取失败';
       setState({ status: 'error', message: msg });
@@ -68,27 +101,68 @@ function ExtractCell({ platformName }: { platformName: string }) {
 
   const handleReset = useCallback(() => setState({ status: 'idle' }), []);
 
+  // ── idle ──
   if (state.status === 'idle') {
     return (
-      <button type="button" className={styles.extractBtn} onClick={handleExtract}>
+      <button type="button" className={styles.extractBtn} onClick={handleOpenSelector}>
         提取短语
       </button>
     );
   }
 
-  if (state.status === 'estimating') {
-    return <span className={styles.extractStatus}>估算中…</span>;
+  // ── loading batches ──
+  if (state.status === 'loading_batches') {
+    return <span className={styles.extractStatus}>加载批次…</span>;
   }
 
+  // ── selecting batch ──
+  if (state.status === 'selecting') {
+    const { batches, selectedBatch, timeout_seconds } = state;
+    return (
+      <span className={styles.extractSelector}>
+        <select
+          className={styles.batchSelect}
+          value={selectedBatch}
+          onChange={e => setState({ ...state, selectedBatch: e.target.value })}
+          aria-label="选择批次"
+        >
+          {batches.length === 0 && (
+            <option value="">（无历史批次）</option>
+          )}
+          {batches.map(b => (
+            <option key={b.batch_id} value={b.batch_id}>
+              {formatBatchId(b.batch_id)}
+              {' '}({b.article_count}条{b.extracted ? ' ✓' : ''})
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className={styles.extractBtn}
+          onClick={() => handleExtract(selectedBatch, timeout_seconds)}
+          disabled={!selectedBatch && batches.length > 0}
+        >
+          执行
+        </button>
+        <button type="button" className={styles.extractResetBtn} onClick={handleReset}>
+          取消
+        </button>
+      </span>
+    );
+  }
+
+  // ── running ──
   if (state.status === 'running') {
     const elapsed = Math.round((Date.now() - state.start_at) / 1000);
     return (
       <span className={styles.extractStatus}>
         提取中… {elapsed}s / 预计≤{state.timeout_seconds}s
+        {state.batch_id && <span className={styles.batchTag}>{formatBatchId(state.batch_id)}</span>}
       </span>
     );
   }
 
+  // ── error ──
   if (state.status === 'error') {
     return (
       <span className={styles.extractError} title={state.message}>
@@ -98,12 +172,13 @@ function ExtractCell({ platformName }: { platformName: string }) {
     );
   }
 
-  // done
-  const { data } = state;
+  // ── done ──
+  const { data, batch_id } = state;
   return (
     <span className={styles.extractDone}>
       完成 {data.article_count}条/{data.elapsed_seconds}s
       {data.skipped_by_cache && ' (缓存)'}
+      {batch_id && <span className={styles.batchTag}>{formatBatchId(batch_id)}</span>}
       <button type="button" className={styles.extractResetBtn} onClick={handleReset}>
         重置
       </button>

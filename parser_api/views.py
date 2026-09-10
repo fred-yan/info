@@ -30,6 +30,11 @@ def _now_minute() -> object:
     return timezone.now().replace(second=0, microsecond=0)
 
 
+def _get_batch_id(request) -> str:
+    """从 request 里取调度器传入的 _batch_id，手动触发时为空字符串。"""
+    return request.GET.get('_batch_id', '').strip()
+
+
 def _bulk_save(platform: str, info_objects: list, url: str = "") -> None:
     """批量写入数据库，统一处理日志和空结果警告。"""
     if info_objects:
@@ -38,6 +43,22 @@ def _bulk_save(platform: str, info_objects: list, url: str = "") -> None:
         logger.info("%s saved to db items=%d", platform, len(info_objects))
     else:
         logger.warning("%s result empty (0 items) url=%s", platform, url)
+
+
+def _make_info(platform: str, item, fetch_time, batch_id: str, **overrides) -> Info:
+    """统一构造 Info 对象，自动序列化 detail 字段并填入 batch_id。"""
+    detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
+    return Info(
+        title=item.title,
+        url=item.link,
+        platform=platform,
+        date=fetch_time,
+        batch_id=batch_id,
+        section=overrides.get('section', item.section or ""),
+        rank=item.rank,
+        detail=overrides.get('detail', detail_str),
+        ranktime=overrides.get('ranktime', item.ranktime or ""),
+    )
 
 
 def economist_view(request):
@@ -58,54 +79,26 @@ def economist_view(request):
     if result.error is None:
         try:
             fetch_time = _now_minute()
-            
+            batch_id = _get_batch_id(request)
             info_objects = []
-            
-            # 保存 items（section_1, section_2, section_3 和 Business 等栏目）
             if result.items:
                 for item in result.items:
-                    # 如果有 detail 字段，序列化为 JSON 字符串
-                    detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                    
-                    info_objects.append(Info(
-                        title=item.title,
-                        url=item.link,
-                        platform="economist",
-                        date=fetch_time,
-                        section=item.section or "",
-                        rank=item.rank,
-                        detail=detail_str,
-                        ranktime=item.ranktime or ""
-                    ))
-            
-            # 保存 most_read（hotlist，带 rank 和 ranktime）
+                    info_objects.append(_make_info("economist", item, fetch_time, batch_id))
             if result.most_read:
                 for item in result.most_read:
-                    # 如果有 detail 字段，序列化为 JSON 字符串
-                    detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                    
-                    info_objects.append(Info(
-                        title=item.title,
-                        url=item.link,
-                        platform="economist",
-                        date=fetch_time,
-                        section=item.section or "hotlist",
-                        rank=item.rank,
-                        detail=detail_str,
-                        ranktime=item.ranktime or "48hour"
-                    ))
-            
-            # 批量插入数据库
+                    info_objects.append(_make_info("economist", item, fetch_time, batch_id,
+                                                   section=item.section or "hotlist",
+                                                   ranktime=item.ranktime or "48hour"))
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
-                logger.info("economist saved to db items=%d most_read=%d", len(result.items), len(result.most_read))
+                logger.info("economist saved to db items=%d most_read=%d",
+                            len(result.items or []), len(result.most_read or []))
             else:
                 logger.warning("economist result empty items=%d most_read=%d url=%s",
                                len(result.items or []), len(result.most_read or []), url)
         except Exception as db_exc:
             logger.error("economist db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -133,45 +126,24 @@ def apnews_view(request):
     if result.error is None:
         try:
             fetch_time = _now_minute()
-            
+            batch_id = _get_batch_id(request)
             info_objects = []
-            
-            # 保存 items（section_1 和 section_2）
             if result.items:
                 for item in result.items:
-                    info_objects.append(Info(
-                        title=item.title,
-                        url=item.link,
-                        platform="apnews",
-                        date=fetch_time,
-                        section=item.section or "",
-                        rank=item.rank,
-                        detail="",
-                        ranktime=""
-                    ))
-            
-            # 保存 most_read（hotlist，带 rank 和 ranktime）
+                    info_objects.append(_make_info("apnews", item, fetch_time, batch_id, detail=""))
             if result.most_read:
                 for item in result.most_read:
-                    info_objects.append(Info(
-                        title=item.title,
-                        url=item.link,
-                        platform="apnews",
-                        date=fetch_time,
-                        section=item.section or "hotlist",  # section 为 hotlist
-                        rank=item.rank,  # rank 字段
-                        detail="",
-                        ranktime=item.ranktime or "48hour"  # ranktime 字段
-                    ))
-            
-            # 批量插入数据库
+                    info_objects.append(_make_info("apnews", item, fetch_time, batch_id,
+                                                   section=item.section or "hotlist",
+                                                   ranktime=item.ranktime or "48hour",
+                                                   detail=""))
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
-                logger.info("apnews saved to db items=%d most_read=%d", len(result.items), len(result.most_read))
+                logger.info("apnews saved to db items=%d most_read=%d",
+                            len(result.items or []), len(result.most_read or []))
         except Exception as db_exc:
             logger.error("apnews db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -199,33 +171,15 @@ def ftchinese_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            
-            info_objects = []
-            
-            # 保存 items（hotlist 和 hotlist_paid）
-            for item in result.items:
-                # 如果有 detail 字段，序列化为 JSON 字符串
-                detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                
-                info_objects.append(Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="ftchinese",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=detail_str,
-                    ranktime=item.ranktime or ""
-                ))
-            
-            # 批量插入数据库
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("ftchinese", item, fetch_time, batch_id)
+                            for item in result.items]
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
                 logger.info("ftchinese saved to db items=%d", len(info_objects))
         except Exception as db_exc:
             logger.error("ftchinese db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -253,33 +207,15 @@ def wsj_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            
-            info_objects = []
-            
-            # 保存 items（section_1 和 hotlist）
-            for item in result.items:
-                # 如果有 detail 字段，序列化为 JSON 字符串
-                detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                
-                info_objects.append(Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="wsj",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=detail_str,
-                    ranktime=item.ranktime or ""
-                ))
-            
-            # 批量插入数据库
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("wsj", item, fetch_time, batch_id)
+                            for item in result.items]
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
                 logger.info("wsj saved to db items=%d", len(info_objects))
         except Exception as db_exc:
             logger.error("wsj db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -307,33 +243,15 @@ def kr36_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            
-            info_objects = []
-            
-            # 保存 items（hotlist，带 attr 区分榜单类型）
-            for item in result.items:
-                # 如果有 detail 字段，序列化为 JSON 字符串
-                detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                
-                info_objects.append(Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="kr36",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=detail_str,
-                    ranktime=item.ranktime or ""
-                ))
-            
-            # 批量插入数据库
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("kr36", item, fetch_time, batch_id)
+                            for item in result.items]
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
                 logger.info("kr36 saved to db items=%d", len(info_objects))
         except Exception as db_exc:
             logger.error("kr36 db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -359,19 +277,8 @@ def huxiu_view(request):
     if items:
         try:
             fetch_time = _now_minute()
-            info_objects = []
-            for item in items:
-                detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                info_objects.append(Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="huxiu",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=detail_str,
-                    ranktime=item.ranktime or "",
-                ))
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("huxiu", item, fetch_time, batch_id) for item in items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("huxiu saved to db items=%d", len(info_objects))
@@ -404,19 +311,8 @@ def wscn_view(request):
     if items:
         try:
             fetch_time = _now_minute()
-            info_objects = [
-                Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="wscn",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=json.dumps(item.detail, ensure_ascii=False) if item.detail else "",
-                    ranktime=item.ranktime or "",
-                )
-                for item in items
-            ]
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("wscn", item, fetch_time, batch_id) for item in items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("wscn saved to db items=%d", len(info_objects))
@@ -449,19 +345,9 @@ def cls_view(request):
     if items:
         try:
             fetch_time = _now_minute()
-            info_objects = [
-                Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="cls",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail="",
-                    ranktime=item.ranktime or "",
-                )
-                for item in items
-            ]
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("cls", item, fetch_time, batch_id, detail="")
+                            for item in items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("cls saved to db items=%d", len(info_objects))
@@ -494,19 +380,8 @@ def jiqizhixin_view(request):
     if items:
         try:
             fetch_time = _now_minute()
-            info_objects = [
-                Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="jiqizhixin",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=json.dumps(item.detail, ensure_ascii=False) if item.detail else "",
-                    ranktime=item.ranktime or "",
-                )
-                for item in items
-            ]
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("jiqizhixin", item, fetch_time, batch_id) for item in items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("jiqizhixin saved to db items=%d", len(info_objects))
@@ -536,8 +411,8 @@ def theverge_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            info_objects = [Info(title=i.title, url=i.link, platform="theverge", date=fetch_time,
-                                 section=i.section or "", rank=i.rank, detail="", ranktime=i.ranktime or "")
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("theverge", i, fetch_time, batch_id, detail="")
                             for i in result.items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
@@ -563,8 +438,8 @@ def techcrunch_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            info_objects = [Info(title=i.title, url=i.link, platform="techcrunch", date=fetch_time,
-                                 section=i.section or "", rank=i.rank, detail="", ranktime=i.ranktime or "")
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("techcrunch", i, fetch_time, batch_id, detail="")
                             for i in result.items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
@@ -590,8 +465,8 @@ def mittr_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            info_objects = [Info(title=i.title, url=i.link, platform="mittr", date=fetch_time,
-                                 section=i.section or "", rank=i.rank, detail="", ranktime=i.ranktime or "")
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("mittr", i, fetch_time, batch_id, detail="")
                             for i in result.items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
@@ -621,19 +496,8 @@ def tmtpost_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            info_objects = [
-                Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="tmtpost",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=json.dumps(item.detail, ensure_ascii=False) if item.detail else "",
-                    ranktime=item.ranktime or "",
-                )
-                for item in result.items
-            ]
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("tmtpost", item, fetch_time, batch_id) for item in result.items]
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("tmtpost saved to db items=%d", len(info_objects))
@@ -666,51 +530,23 @@ def wst_post_view(request):
     if result.error is None:
         try:
             fetch_time = _now_minute()
-            
+            batch_id = _get_batch_id(request)
             info_objects = []
-            
-            # 保存 items（section_1, section_2, section_3）
             if result.items:
                 for item in result.items:
-                    # 如果有 detail 字段，序列化为 JSON 字符串
-                    detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                    
-                    info_objects.append(Info(
-                        title=item.title,
-                        url=item.link,
-                        platform="washingtonpost",
-                        date=fetch_time,
-                        section=item.section or "",
-                        rank=item.rank,
-                        detail=detail_str,
-                        ranktime=item.ranktime or ""
-                    ))
-            
-            # 保存 most_read（hotlist，带 rank 和 ranktime）
+                    info_objects.append(_make_info("washingtonpost", item, fetch_time, batch_id))
             if result.most_read:
                 for item in result.most_read:
-                    # 如果有 detail 字段，序列化为 JSON 字符串
-                    detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                    
-                    info_objects.append(Info(
-                        title=item.title,
-                        url=item.link,
-                        platform="washingtonpost",
-                        date=fetch_time,
-                        section=item.section or "hotlist",
-                        rank=item.rank,
-                        detail=detail_str,
-                        ranktime=item.ranktime or "48hour"
-                    ))
-            
-            # 批量插入数据库
+                    info_objects.append(_make_info("washingtonpost", item, fetch_time, batch_id,
+                                                   section=item.section or "hotlist",
+                                                   ranktime=item.ranktime or "48hour"))
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
-                logger.info("washingtonpost saved to db items=%d most_read=%d", len(result.items), len(result.most_read))
+                logger.info("washingtonpost saved to db items=%d most_read=%d",
+                            len(result.items or []), len(result.most_read or []))
         except Exception as db_exc:
             logger.error("washingtonpost db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -738,33 +574,14 @@ def zaobao_view(request):
     if result.error is None and result.items:
         try:
             fetch_time = _now_minute()
-            
-            info_objects = []
-            
-            # 保存 items（section_1 和 finance）
-            for item in result.items:
-                # 如果有 detail 字段，序列化为 JSON 字符串
-                detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-                
-                info_objects.append(Info(
-                    title=item.title,
-                    url=item.link,
-                    platform="zaobao",
-                    date=fetch_time,
-                    section=item.section or "",
-                    rank=item.rank,
-                    detail=detail_str,
-                    ranktime=item.ranktime or ""
-                ))
-            
-            # 批量插入数据库
+            batch_id = _get_batch_id(request)
+            info_objects = [_make_info("zaobao", item, fetch_time, batch_id) for item in result.items]
             if info_objects:
                 close_old_connections()
                 Info.objects.bulk_create(info_objects)
                 logger.info("zaobao saved to db items=%d", len(info_objects))
         except Exception as db_exc:
             logger.error("zaobao db save error: %s", db_exc, exc_info=True)
-            # 数据库保存失败不影响 API 响应
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
@@ -788,40 +605,16 @@ def github_trending_view(request):
         body = json.dumps({"error": result})
         return HttpResponse(body, content_type="application/json", status=400 if "Invalid" in result else 502)
     
-    # 保存数据到数据库
     try:
-        from django.utils import timezone as django_timezone
-        from datetime import datetime, timezone as dt_timezone
-        
-        # 创建当前时间戳
         fetch_time = _now_minute()
-        
-        info_objects = []
-        
-        # 保存 items（hotlist，带 ranktime）
-        for item in result:
-            # 如果有 detail 字段，序列化为 JSON 字符串
-            detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-            
-            info_objects.append(Info(
-                title=item.title,
-                url=item.link,
-                platform="github",
-                date=fetch_time,
-                section=item.section or "",
-                rank=item.rank,
-                detail=detail_str,
-                ranktime=item.ranktime or ""
-            ))
-        
-        # 批量插入数据库
+        batch_id = _get_batch_id(request)
+        info_objects = [_make_info("github", item, fetch_time, batch_id) for item in result]
         if info_objects:
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("github_trending saved to db since=%s items=%d", since, len(info_objects))
     except Exception as db_exc:
         logger.error("github_trending db save error: %s", db_exc, exc_info=True)
-        # 数据库保存失败不影响 API 响应
     
     # 构建 JSON 响应
     response_data = {
@@ -864,25 +657,10 @@ def zaobao_hotlist_view(request):
     all_items = result_day + result_week
     elapsed = time.monotonic() - t0
 
-    # 保存数据到数据库
     try:
         fetch_time = _now_minute()
-        info_objects = []
-
-        for item in all_items:
-            detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-
-            info_objects.append(Info(
-                title=item.title,
-                url=item.link,
-                platform="zaobao",
-                date=fetch_time,
-                section=item.section or "",
-                rank=item.rank,
-                detail=detail_str,
-                ranktime=item.ranktime or ""
-            ))
-
+        batch_id = _get_batch_id(request)
+        info_objects = [_make_info("zaobao", item, fetch_time, batch_id) for item in all_items]
         if info_objects:
             close_old_connections()
             Info.objects.bulk_create(info_objects)
@@ -925,35 +703,16 @@ def hacker_news_top_stories_view(request):
         body = json.dumps({"error": result})
         return HttpResponse(body, content_type="application/json", status=502)
     
-    # 保存数据到数据库
     try:
         fetch_time = _now_minute()
-        info_objects = []
-        
-        # 保存 items（hotlist，带 ranktime）
-        for item in result:
-            # 如果有 detail 字段，序列化为 JSON 字符串
-            detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-            
-            info_objects.append(Info(
-                title=item.title,
-                url=item.link,
-                platform="hackernews",
-                date=fetch_time,
-                section=item.section or "",
-                rank=item.rank,
-                detail=detail_str,
-                ranktime=item.ranktime or ""
-            ))
-        
-        # 批量插入数据库
+        batch_id = _get_batch_id(request)
+        info_objects = [_make_info("hackernews", item, fetch_time, batch_id) for item in result]
         if info_objects:
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("hacker_news_top_stories saved to db items=%d", len(info_objects))
     except Exception as db_exc:
         logger.error("hacker_news_top_stories db save error: %s", db_exc, exc_info=True)
-        # 数据库保存失败不影响 API 响应
     
     # 构建 JSON 响应
     response_data = {
@@ -986,35 +745,16 @@ def zhihu_view(request):
         body = json.dumps({"error": result})
         return HttpResponse(body, content_type="application/json", status=502)
     
-    # 保存数据到数据库
     try:
         fetch_time = _now_minute()
-        info_objects = []
-        
-        # 保存 items（hotlist，带 ranktime）
-        for item in result:
-            # 如果有 detail 字段，序列化为 JSON 字符串
-            detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-            
-            info_objects.append(Info(
-                title=item.title,
-                url=item.link,
-                platform="zhihu",
-                date=fetch_time,
-                section=item.section or "",
-                rank=item.rank,
-                detail=detail_str,
-                ranktime=item.ranktime or ""
-            ))
-        
-        # 批量插入数据库
+        batch_id = _get_batch_id(request)
+        info_objects = [_make_info("zhihu", item, fetch_time, batch_id) for item in result]
         if info_objects:
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("zhihu saved to db items=%d", len(info_objects))
     except Exception as db_exc:
         logger.error("zhihu db save error: %s", db_exc, exc_info=True)
-        # 数据库保存失败不影响 API 响应
     
     # 构建 JSON 响应
     response_data = {
@@ -1047,35 +787,16 @@ def pengpai_view(request):
         body = json.dumps({"error": result})
         return HttpResponse(body, content_type="application/json", status=502)
     
-    # 保存数据到数据库
     try:
         fetch_time = _now_minute()
-        info_objects = []
-        
-        # 保存 items（hotlist，带 ranktime）
-        for item in result:
-            # 如果有 detail 字段，序列化为 JSON 字符串
-            detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-            
-            info_objects.append(Info(
-                title=item.title,
-                url=item.link,
-                platform="pengpai",
-                date=fetch_time,
-                section=item.section or "",
-                rank=item.rank,
-                detail=detail_str,
-                ranktime=item.ranktime or ""
-            ))
-        
-        # 批量插入数据库
+        batch_id = _get_batch_id(request)
+        info_objects = [_make_info("pengpai", item, fetch_time, batch_id) for item in result]
         if info_objects:
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("pengpai saved to db items=%d", len(info_objects))
     except Exception as db_exc:
         logger.error("pengpai db save error: %s", db_exc, exc_info=True)
-        # 数据库保存失败不影响 API 响应
     
     # 构建 JSON 响应
     response_data = {
@@ -1108,35 +829,16 @@ def weibo_view(request):
         body = json.dumps({"error": result})
         return HttpResponse(body, content_type="application/json", status=502)
     
-    # 保存数据到数据库
     try:
         fetch_time = _now_minute()
-        info_objects = []
-        
-        # 保存 items（hotlist，带 ranktime）
-        for item in result:
-            # 如果有 detail 字段，序列化为 JSON 字符串
-            detail_str = json.dumps(item.detail, ensure_ascii=False) if item.detail else ""
-            
-            info_objects.append(Info(
-                title=item.title,
-                url=item.link,
-                platform="weibo",
-                date=fetch_time,
-                section=item.section or "",
-                rank=item.rank,
-                detail=detail_str,
-                ranktime=item.ranktime or ""
-            ))
-        
-        # 批量插入数据库
+        batch_id = _get_batch_id(request)
+        info_objects = [_make_info("weibo", item, fetch_time, batch_id) for item in result]
         if info_objects:
             close_old_connections()
             Info.objects.bulk_create(info_objects)
             logger.info("weibo saved to db items=%d", len(info_objects))
     except Exception as db_exc:
         logger.error("weibo db save error: %s", db_exc, exc_info=True)
-        # 数据库保存失败不影响 API 响应
     
     # 构建 JSON 响应
     response_data = {

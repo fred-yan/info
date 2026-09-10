@@ -539,7 +539,7 @@ def _run_fetch(task):
         raise ValueError(f"No view mapped for platform: {platform}")
 
     factory = RequestFactory()
-    request = factory.get('/', params) if params else factory.get('/')
+    request = factory.get('/', {**params, '_batch_id': task.batch_id}) if params else factory.get('/', {'_batch_id': task.batch_id})
     response = view_func(request)
 
     if response.status_code != 200:
