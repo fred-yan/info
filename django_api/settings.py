@@ -124,6 +124,18 @@ SCHEDULER_ENABLED = True
 # 调度器时区
 SCHEDULER_TIMEZONE = 'Asia/Shanghai'
 
+# ── 调度器并发度配置 ──────────────────────────────────────────
+# fetch:       同时最多 N 个平台做 Playwright 抓取（内存限制）
+# llm_extract: 同时最多 N 个平台做 LLM 短语提取
+# llm_cluster: 归类任务永远串行，固定为 1
+# total:       线程池总大小，建议 = fetch + llm_extract + 1
+SCHEDULER_CONCURRENCY = {
+    'fetch':       3,
+    'llm_extract': 2,
+    'llm_cluster': 1,
+    'total':       6,
+}
+
 # 定时任务配置 - 使用 crontab 格式
 # 格式: "分 时 日 月 周"
 # 示例:

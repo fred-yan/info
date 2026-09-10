@@ -166,3 +166,84 @@ class SchedulerLock(models.Model):
 
     def __str__(self):
         return f"{self.task_name} @ {self.locked_at}"
+
+
+class SchedulerTask(models.Model):
+    """
+    数据库任务队列，替代进程内内存状态。
+
+    每次定时批次启动时，向此表写入一批任务记录（fetch/llm_extract/llm_cluster）。
+    Worker 通过 select_for_update(skip_locked=True) 抢占 pending 任务，保证多 worker
+    不重复处理同一任务。任务状态、进度、错误全持久化，进程重启不丢失。
+
+    任务类型：
+      fetch       - 平台页面抓取
+      llm_extract - 单平台 LLM 短语提取（依赖对应 fetch 完成）
+      llm_cluster - 全局短语归类（依赖当前批次所有 llm_extract 完成）
+
+    状态流转：
+      waiting  → pending（依赖任务完成后由 worker 触发）
+      pending  → running（worker 抢占后设置）
+      running  → done / failed
+      failed   → pending（retry_count < MAX_RETRY 时重置重试）
+      failed   → skipped（fetch 失败时对应 llm_extract 标记为跳过）
+    """
+
+    # 状态常量
+    STATUS_WAITING  = 'waiting'   # 等待依赖任务完成
+    STATUS_PENDING  = 'pending'   # 等待被 worker 领取
+    STATUS_RUNNING  = 'running'   # 正在执行
+    STATUS_DONE     = 'done'      # 执行成功
+    STATUS_FAILED   = 'failed'    # 执行失败（已超过重试上限）
+    STATUS_SKIPPED  = 'skipped'   # 前置任务失败，跳过本任务
+
+    STATUS_CHOICES = [
+        (STATUS_WAITING,  '等待依赖'),
+        (STATUS_PENDING,  '待执行'),
+        (STATUS_RUNNING,  '执行中'),
+        (STATUS_DONE,     '已完成'),
+        (STATUS_FAILED,   '已失败'),
+        (STATUS_SKIPPED,  '已跳过'),
+    ]
+
+    # 任务类型常量
+    TYPE_FETCH       = 'fetch'
+    TYPE_LLM_EXTRACT = 'llm_extract'
+    TYPE_LLM_CLUSTER = 'llm_cluster'
+
+    TYPE_CHOICES = [
+        (TYPE_FETCH,       '平台抓取'),
+        (TYPE_LLM_EXTRACT, 'LLM短语提取'),
+        (TYPE_LLM_CLUSTER, 'LLM全局归类'),
+    ]
+
+    # llm_cluster 任务的 platform 占位值
+    PLATFORM_ALL = '__all__'
+
+    batch_id    = models.CharField(max_length=20, verbose_name="批次ID")      # "20260909_1800"
+    task_type   = models.CharField(max_length=20, choices=TYPE_CHOICES, verbose_name="任务类型")
+    platform    = models.CharField(max_length=64, verbose_name="平台")         # llm_cluster 时为 "__all__"
+    status      = models.CharField(max_length=16, choices=STATUS_CHOICES,
+                                   default=STATUS_PENDING, verbose_name="状态")
+    worker_id   = models.CharField(max_length=64, blank=True, verbose_name="Worker ID")
+    created_at  = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    started_at  = models.DateTimeField(null=True, blank=True, verbose_name="开始时间")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="完成时间")
+    error_msg   = models.TextField(blank=True, verbose_name="错误信息")
+    retry_count = models.IntegerField(default=0, verbose_name="已重试次数")
+    timeout_at  = models.DateTimeField(null=True, blank=True, verbose_name="预计超时时间")
+
+    class Meta:
+        db_table = "scheduler_task"
+        verbose_name = "调度任务"
+        verbose_name_plural = "调度任务"
+        unique_together = [('batch_id', 'task_type', 'platform')]
+        indexes = [
+            models.Index(fields=['status', 'task_type']),
+            models.Index(fields=['batch_id', 'status']),
+            models.Index(fields=['batch_id', 'task_type']),
+            models.Index(fields=['timeout_at', 'status']),
+        ]
+
+    def __str__(self):
+        return f"[{self.batch_id}] {self.task_type}/{self.platform} → {self.status}"
