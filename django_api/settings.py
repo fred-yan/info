@@ -154,7 +154,7 @@ SCHEDULER_CONFIG = {
     },
     'ftchinese': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
-        'enabled': True,
+        'enabled': False,  # FT中文网需要订阅账号，暂停抓取
     },
     'wsj': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
@@ -252,7 +252,7 @@ SCHEDULER_CONFIG = {
 # ==================== 平台分组配置 ====================
 PLATFORM_GROUPS = {
     "domestic": {
-        "platforms": ["ftchinese", "kr36", "tmtpost", "jiqizhixin", "cls", "wscn", "huxiu", "zaobao", "zhihu", "weibo", "pengpai"],
+        "platforms": ["kr36", "tmtpost", "jiqizhixin", "cls", "wscn", "huxiu", "zaobao", "zhihu", "weibo", "pengpai"],
         "label": "国内热点",
         "lang": "zh"
     },
