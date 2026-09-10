@@ -60,19 +60,27 @@ def extract_phrases_for_platform(platform: str, force: bool = False) -> dict:
     now = timezone.now()
     batch_size = LLMConfig.BATCH_SIZE
 
-    # 1. 取该平台最新一批文章
-    latest = Info.objects.filter(platform=platform).aggregate(m=Max("date"))["m"]
-    if not latest:
-        return {
-            "platform": platform, "article_count": 0, "batch_size": batch_size,
-            "batches": 0, "estimated_timeout_seconds": 30, "elapsed_seconds": 0,
-            "results": [], "skipped_by_cache": False, "error": "该平台无数据",
-        }
-
+    # 1. 取该平台当天（过去8小时内）写入的所有文章
+    # 不用 Max("date") 单批，避免 zaobao/zaobao_hotlist 等多任务写入不同 date 时漏掉数据
+    from datetime import timedelta
+    window_start = now - timedelta(hours=8)
     articles = list(
-        Info.objects.filter(platform=platform, date=latest)
+        Info.objects.filter(platform=platform, date__gte=window_start)
         .order_by("section", "rank", "id")
     )
+    if not articles:
+        # 兜底：取最新一批
+        latest = Info.objects.filter(platform=platform).aggregate(m=Max("date"))["m"]
+        if not latest:
+            return {
+                "platform": platform, "article_count": 0, "batch_size": batch_size,
+                "batches": 0, "estimated_timeout_seconds": 30, "elapsed_seconds": 0,
+                "results": [], "skipped_by_cache": False, "error": "该平台无数据",
+            }
+        articles = list(
+            Info.objects.filter(platform=platform, date=latest)
+            .order_by("section", "rank", "id")
+        )
     article_count = len(articles)
     batches_count = math.ceil(article_count / batch_size)
     estimated_timeout = estimate_timeout(article_count, batch_size)
