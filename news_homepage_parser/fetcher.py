@@ -56,8 +56,9 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
         launch_args.append("--disable-http2")
     
     try:
+        logger.debug("fetch waiting for semaphore url=%s", url)
         with _PLAYWRIGHT_SEMAPHORE:
-            logger.debug("fetch playwright semaphore acquired url=%s", url)
+            logger.debug("fetch semaphore acquired url=%s", url)
             with sync_playwright() as p:
                 # 代理配置：从环境变量 PLAYWRIGHT_PROXY 读取
                 # 只对国际网站使用代理，国内网站直连
@@ -164,7 +165,8 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
                                 logger.info("Clicking element")
                                 elem.click()
                             else:
-                                logger.warning("Element not visible")
+                                logger.warning("fetch click element not visible url=%s selector=%s",
+                                               url, click_selector)
                         # 点击后等待内容变化
                         logger.info("Waiting for content to change after click")
                         # 等待足够的时间让 AJAX 请求完成并渲染
@@ -176,7 +178,7 @@ def fetch(url: str, timeout: int = 60, click_selector: str | None = None, use_ht
                 try:
                     page.wait_for_load_state("domcontentloaded", timeout=5000)
                 except Exception as e:
-                    logger.debug("wait_for_load_state timeout/ignored url=%s err=%s", url, e)
+                    logger.info("wait_for_load_state timeout/ignored url=%s err=%s", url, e)
                 html = page.content()
                 browser.close()
                 elapsed = time.monotonic() - t0

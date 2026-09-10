@@ -91,7 +91,7 @@ def _start_batch():
     ]
 
     if not platforms:
-        logger.warning("[Scheduler] No enabled platforms in SCHEDULER_CONFIG")
+        logger.warning("[Scheduler] No enabled platforms in SCHEDULER_CONFIG (total_keys=%d)", len(scheduler_config))
         return
 
     # 防重复：同一批次已存在则跳过
@@ -476,7 +476,7 @@ def _run_llm_cluster(task):
     from parser_api.scheduler_lock import try_acquire_lock, release_lock
     lock_key = 'task_llm_cluster_global'
     if not try_acquire_lock(lock_key, ttl_seconds=_TASK_TIMEOUT['llm_cluster']):
-        logger.info("[Scheduler] llm_cluster skipped (global lock held) batch=%s", task.batch_id)
+        logger.debug("[Scheduler] llm_cluster skipped (global lock held) batch=%s", task.batch_id)
         return
 
     try:
@@ -533,9 +533,9 @@ def _detect_zombie_tasks():
 
     logger.warning("[Scheduler] Found %d zombie tasks", len(zombies))
     for task in zombies:
-        logger.warning("[Scheduler] Zombie: [%s] %s/%s worker=%s timeout_at=%s",
+        logger.warning("[Scheduler] Zombie: [%s] %s/%s worker=%s timeout_at=%s started_at=%s",
                        task.batch_id, task.task_type, task.platform,
-                       task.worker_id, task.timeout_at)
+                       task.worker_id, task.timeout_at, task.started_at)
         max_retry = _MAX_RETRY.get(task.task_type, 1)
         task.retry_count += 1
         task.error_msg = f'zombie: killed after timeout (worker={task.worker_id})'
@@ -663,7 +663,7 @@ def _run_llm_cluster(task):  # noqa: F811 — 覆盖上面的占位定义
 
     lock_key = 'task_llm_cluster_global'
     if not _try_acquire_global_lock(lock_key, ttl_seconds=_TASK_TIMEOUT['llm_cluster']):
-        logger.info("[Scheduler] llm_cluster skipped (global lock held) batch=%s", task.batch_id)
+        logger.debug("[Scheduler] llm_cluster skipped (global lock held) batch=%s", task.batch_id)
         return
 
     try:

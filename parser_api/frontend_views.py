@@ -67,7 +67,7 @@ def keywords_ranking_view(request):
     t0 = time.monotonic()
     group = request.GET.get("group", "domestic")
     top = int(request.GET.get("top", "50"))
-    logger.info("keywords_ranking group=%s top=%d", group, top)
+    logger.debug("keywords_ranking group=%s top=%d", group, top)
 
     if group not in ("domestic", "international"):
         return _error_response("group 参数必须为 domestic 或 international")
@@ -177,7 +177,7 @@ def keywords_trend_view(request):
     keyword = request.GET.get("keyword")
     group = request.GET.get("group", "domestic")
     days = int(request.GET.get("days", "7"))
-    logger.info("keywords_trend keyword=%s group=%s days=%d", keyword, group, days)
+    logger.debug("keywords_trend keyword=%s group=%s days=%d", keyword, group, days)
 
     if not keyword:
         return _error_response("keyword 参数必填")
@@ -223,7 +223,7 @@ def keywords_articles_view(request):
     t0 = time.monotonic()
     keyword = request.GET.get("keyword")
     group = request.GET.get("group", "domestic")
-    logger.info("keywords_articles keyword=%s group=%s", keyword, group)
+    logger.debug("keywords_articles keyword=%s group=%s", keyword, group)
 
     if not keyword:
         return _error_response("keyword 参数必填")
@@ -296,7 +296,7 @@ def news_feed_view(request):
     section = request.GET.get("section")
     page = max(int(request.GET.get("page", "1")), 1)
     page_size = min(int(request.GET.get("page_size", "20")), 100)
-    logger.info("news_feed platform=%s section=%s page=%d page_size=%d",
+    logger.debug("news_feed platform=%s section=%s page=%d page_size=%d",
                 platform, section, page, page_size)
 
     try:
@@ -368,7 +368,7 @@ def platforms_view(request):
         return HttpResponse(status=405)
 
     t0 = time.monotonic()
-    logger.info("platforms_view called")
+
 
     try:
         platform_groups = settings.PLATFORM_GROUPS
@@ -477,7 +477,7 @@ def news_latest_view(request):
     if not platform:
         return _error_response("platform 参数必填")
 
-    logger.info("news_latest platform=%s", platform)
+    logger.debug("news_latest platform=%s", platform)
 
     # 1. 取该平台最近一次抓取时间
     from django.db.models import Max
@@ -575,9 +575,7 @@ def news_latest_view(request):
         return _error_response(f"平台 '{platform}' 暂无数据", status=404)
 
     if is_stale:
-        logger.warning("news_latest stale platform=%s fetch_age_hours=%.1f", platform, fetch_age_hours)
-        # 数据过期时仍返回 200 + is_stale=true，让前端展示过期标记
-        # 不用 503——503 会触发代理/客户端自动重试，造成大量无效请求
+        logger.info("news_latest stale platform=%s fetch_age_hours=%.1f", platform, fetch_age_hours)
 
     logger.info("news_latest ok platform=%s cards=%d fetch_age_hours=%.1f elapsed=%.2fs",
                 platform, len(cards), fetch_age_hours, time.monotonic() - t0)

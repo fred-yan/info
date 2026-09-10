@@ -90,7 +90,8 @@ def extract_phrases_for_platform(platform: str, force: bool = False) -> dict:
             ).values_list("article_id", flat=True)
         )
         if len(cached_ids) >= article_count * 0.8:
-            logger.info("extract_phrases_for_platform cache hit platform=%s", platform)
+            logger.info("extract_phrases_for_platform cache hit platform=%s cached=%d/%d",
+                        platform, len(cached_ids), article_count)
             results = _build_results_from_db(articles, now)
             return {
                 "platform": platform, "article_count": article_count,
@@ -126,7 +127,8 @@ def extract_phrases_for_platform(platform: str, force: bool = False) -> dict:
             group=platform, batch_index=batch_num, analysis_time=now,
         )
         if not result:
-            logger.warning("  platform=%s batch=%d LLM returned None, skipping", platform, batch_num)
+            logger.error("  platform=%s batch=%d LLM returned None, skipping raw_preview=%s",
+                         platform, batch_num, str(raw or "")[:120])
             continue
 
         has_critical, valid_items = _validate_stage1_result(
@@ -204,7 +206,9 @@ def _build_results_from_db(articles: list, now) -> list:
                     "extracted_phrases": json.loads(ext.extracted_phrases or "[]"),
                     "normalized_phrases": json.loads(ext.normalized_phrases or "[]"),
                 }
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning("_build_results_from_db json parse error article_id=%d err=%s",
+                               ext.article_id, e)
                 ext_map[ext.article_id] = {"extracted_phrases": [], "normalized_phrases": []}
 
     results = []

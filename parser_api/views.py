@@ -109,6 +109,8 @@ def economist_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("economist parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -173,6 +175,8 @@ def apnews_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -225,6 +229,8 @@ def ftchinese_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -277,6 +283,8 @@ def wsj_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -329,6 +337,8 @@ def kr36_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -370,6 +380,8 @@ def huxiu_view(request):
 
     elapsed = time.monotonic() - t0
     status = 200 if items else 502
+    if not items:
+        logger.warning("huxiu_view empty result elapsed=%.1fs", elapsed)
     logger.info("huxiu_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
     result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
     return HttpResponse(result_body, content_type="application/json", status=status)
@@ -413,6 +425,8 @@ def wscn_view(request):
 
     elapsed = time.monotonic() - t0
     status = 200 if items else 502
+    if not items:
+        logger.warning("wscn_view empty result elapsed=%.1fs", elapsed)
     logger.info("wscn_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
     result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
     return HttpResponse(result_body, content_type="application/json", status=status)
@@ -456,6 +470,8 @@ def cls_view(request):
 
     elapsed = time.monotonic() - t0
     status = 200 if items else 502
+    if not items:
+        logger.warning("cls_view empty result elapsed=%.1fs", elapsed)
     logger.info("cls_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
     result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
     return HttpResponse(result_body, content_type="application/json", status=status)
@@ -499,6 +515,8 @@ def jiqizhixin_view(request):
 
     elapsed = time.monotonic() - t0
     status = 200 if items else 502
+    if not items:
+        logger.warning("jiqizhixin_view empty result elapsed=%.1fs", elapsed)
     logger.info("jiqizhixin_view status=%d items=%d elapsed=%.1fs", status, len(items), elapsed)
     result_body = json.dumps({"status": "ok" if items else "error", "count": len(items)}, ensure_ascii=False)
     return HttpResponse(result_body, content_type="application/json", status=status)
@@ -624,6 +642,8 @@ def tmtpost_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -694,6 +714,8 @@ def wst_post_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
@@ -746,6 +768,8 @@ def zaobao_view(request):
 
     status = 200 if result.error is None else 502
     elapsed = time.monotonic() - t0
+    if result.error is not None:
+        logger.warning("parse failed url=%s error=%s", url, result.error)
     logger.info("view done url=%s status=%d elapsed=%.1fs", url, status, elapsed)
     return HttpResponse(to_json(result), content_type="application/json", status=status)
 
