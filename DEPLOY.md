@@ -150,6 +150,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/info
 Environment="PATH=/opt/info/.venv/bin"
+EnvironmentFile=/opt/info/.env
 ExecStart=/opt/info/.venv/bin/gunicorn django_api.wsgi:application \
   --bind 127.0.0.1:8000 \
   --workers 2 \
