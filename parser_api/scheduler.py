@@ -45,11 +45,23 @@ _MAX_RETRY = {
     'llm_cluster': 1,
 }
 
-# 各任务类型超时时间（秒），用于僵死检测
+# 各任务类型默认超时时间（秒），用于僵死检测
 _TASK_TIMEOUT = {
-    'fetch':       180,   # Playwright 最长 3 分钟
+    'fetch':       180,   # Playwright 最长 3 分钟（默认）
     'llm_extract': 600,   # 单平台 LLM 最长 10 分钟
     'llm_cluster': 1800,  # 全局归类最长 30 分钟
+}
+
+# 特定平台的 fetch 超时覆盖（秒）
+# hacker_news：并发拉取 200 条 item 详情（5线程×10s超时），实测需 2-4 分钟
+# zaobao/zaobao_hotlist：Playwright + 多页抓取，实测需 3-5 分钟
+_PLATFORM_FETCH_TIMEOUT = {
+    'hacker_news':          600,   # 10 分钟
+    'zaobao':               360,   # 6 分钟
+    'zaobao_hotlist':       360,   # 6 分钟
+    'github_trending_daily':   360,
+    'github_trending_weekly':  360,
+    'github_trending_monthly': 360,
 }
 
 # 任务轮询间隔（秒）
@@ -236,7 +248,12 @@ def _pick_next_task():
                 task.status = SchedulerTask.STATUS_RUNNING
                 task.worker_id = _WORKER_ID
                 task.started_at = now
-                task.timeout_at = now + timedelta(seconds=_TASK_TIMEOUT[task_type])
+                # 平台级超时优先于类型级默认值
+                if task_type == SchedulerTask.TYPE_FETCH:
+                    timeout_secs = _PLATFORM_FETCH_TIMEOUT.get(task.platform, _TASK_TIMEOUT['fetch'])
+                else:
+                    timeout_secs = _TASK_TIMEOUT[task_type]
+                task.timeout_at = now + timedelta(seconds=timeout_secs)
                 task.save(update_fields=['status', 'worker_id', 'started_at', 'timeout_at'])
                 return task
         except Exception as e:
