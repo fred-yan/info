@@ -36,6 +36,7 @@ _WAIT_AFTER_SITES: dict[str, int] = {
     "theverge.com":         6,
     "techcrunch.com":       6,
     "technologyreview.com": 6,
+    "economist.com":        8,   # 反爬较强，等待更久
 }
 
 
