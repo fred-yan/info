@@ -576,10 +576,8 @@ def news_latest_view(request):
 
     if is_stale:
         logger.warning("news_latest stale platform=%s fetch_age_hours=%.1f", platform, fetch_age_hours)
-        return _error_response(
-            f"平台 '{platform}' 数据已过期（{fetch_age_hours} 小时前）",
-            status=503,
-        )
+        # 数据过期时仍返回 200 + is_stale=true，让前端展示过期标记
+        # 不用 503——503 会触发代理/客户端自动重试，造成大量无效请求
 
     logger.info("news_latest ok platform=%s cards=%d fetch_age_hours=%.1f elapsed=%.2fs",
                 platform, len(cards), fetch_age_hours, time.monotonic() - t0)
