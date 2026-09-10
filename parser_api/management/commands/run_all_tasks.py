@@ -4,8 +4,64 @@
 """
 from django.core.management.base import BaseCommand
 from django.conf import settings
-from parser_api.scheduler import fetch_task_wrapper
 import time
+
+
+def _run_fetch_direct(platform: str, **params):
+    """
+    直接执行单平台抓取（绕过调度器队列，供手动命令使用）。
+    与定时任务的 _run_fetch 逻辑相同，但不写 SchedulerTask 记录。
+    """
+    from parser_api import views
+    from django.test import RequestFactory
+
+    view_map = {
+        'economist':               views.economist_view,
+        'apnews':                  views.apnews_view,
+        'ftchinese':               views.ftchinese_view,
+        'wsj':                     views.wsj_view,
+        'kr36':                    views.kr36_view,
+        'huxiu':                   views.huxiu_view,
+        'wscn':                    views.wscn_view,
+        'cls':                     views.cls_view,
+        'jiqizhixin':              views.jiqizhixin_view,
+        'tmtpost':                 views.tmtpost_view,
+        'theverge':                views.theverge_view,
+        'techcrunch':              views.techcrunch_view,
+        'mittr':                   views.mittr_view,
+        'zaobao':                  views.zaobao_view,
+        'zaobao_hotlist':          views.zaobao_hotlist_view,
+        'github_trending_daily':   views.github_trending_view,
+        'github_trending_weekly':  views.github_trending_view,
+        'github_trending_monthly': views.github_trending_view,
+        'hacker_news':             views.hacker_news_top_stories_view,
+        'zhihu':                   views.zhihu_view,
+        'weibo':                   views.weibo_view,
+        'pengpai':                 views.pengpai_view,
+        'washingtonpost':          views.wst_post_view,
+        'keyword_analysis_llm':    None,
+    }
+
+    # 特殊任务：LLM 全量分析
+    if platform == 'keyword_analysis_llm':
+        from django.db import close_old_connections
+        from parser_api.llm_extractor_v2 import extract_keywords_llm_v2
+        close_old_connections()
+        extract_keywords_llm_v2(group="domestic")
+        close_old_connections()
+        extract_keywords_llm_v2(group="international")
+        return
+
+    view_func = view_map.get(platform)
+    if not view_func:
+        raise ValueError(f"No view mapped for platform: {platform}")
+
+    factory = RequestFactory()
+    request = factory.get('/', params) if params else factory.get('/')
+    response = view_func(request)
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Fetch failed: platform={platform} status={response.status_code}")
 
 # 默认从批量执行中排除的任务（耗时过长，应单独运行）
 _DEFAULT_EXCLUDE = {'keyword_analysis_llm'}
@@ -107,7 +163,7 @@ class Command(BaseCommand):
             
             try:
                 start = time.time()
-                fetch_task_wrapper(platform, **params)
+                _run_fetch_direct(platform, **params)
                 elapsed = time.time() - start
                 
                 self.stdout.write(
@@ -145,7 +201,7 @@ class Command(BaseCommand):
         with ThreadPoolExecutor(max_workers=5) as executor:
             # 提交所有任务
             future_to_platform = {
-                executor.submit(fetch_task_wrapper, platform, **params): platform
+                executor.submit(_run_fetch_direct, platform, **params): platform
                 for platform, params in tasks
             }
             

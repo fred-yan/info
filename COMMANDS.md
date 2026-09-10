@@ -111,5 +111,5 @@ bun run test
 
 - 修改 `llm_config.ini` 后需要重启服务或清除 `__pycache__/` 才能生效
 - `run_all_tasks --parallel` 默认排除 LLM 分析（因为需要先完成抓取）
-- 定时调度器会在抓取完成后自动延迟 5 分钟触发 LLM 分析
-- 前端通过 Vite 代理（`/api` → `localhost:8000`）访问后端
+- 定时调度器会在每个平台抓取完成后立即触发该平台的 LLM 短语提取，全部完成后触发全局归类
+- 手动命令（`run_all_tasks`、`extract_keywords_llm`）直接执行，不写入调度器任务队列
