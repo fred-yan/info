@@ -136,13 +136,13 @@ export default function NavBar() {
         <li>
           <NavLink to="/" end className={({ isActive }) =>
             isActive ? `${styles.navLink} ${styles.active}` : styles.navLink}>
-            热点快讯
+            资讯
           </NavLink>
         </li>
         <li>
           <NavLink to="/keywords" className={({ isActive }) =>
             isActive ? `${styles.navLink} ${styles.active}` : styles.navLink}>
-            热词榜
+            热词
           </NavLink>
         </li>
       </ul>

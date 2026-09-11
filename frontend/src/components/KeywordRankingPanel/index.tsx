@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { useKeywordRanking } from '../../hooks/useKeywordRanking';
 import { sortKeywordsByRank } from '../../utils/transformations';
 import { KeywordItem } from './KeywordItem';
@@ -9,14 +10,31 @@ interface KeywordRankingPanelProps {
   group: 'domestic' | 'international';
   selectedKeyword: string | null;
   onKeywordSelect: (keyword: string) => void;
+  onFirstKeywordLoaded?: (keyword: string) => void;
 }
 
 export function KeywordRankingPanel({
   group,
   selectedKeyword,
   onKeywordSelect,
+  onFirstKeywordLoaded,
 }: KeywordRankingPanelProps) {
   const { data, loading, error, retry } = useKeywordRanking(group);
+
+  // 数据首次加载完成时，通知父组件第一个热词
+  const notifiedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!loading && !error && data) {
+      const sorted = sortKeywordsByRank(data);
+      if (sorted.length > 0 && onFirstKeywordLoaded) {
+        const first = sorted[0].keyword;
+        if (notifiedRef.current !== first) {
+          notifiedRef.current = first;
+          onFirstKeywordLoaded(first);
+        }
+      }
+    }
+  }, [loading, error, data, onFirstKeywordLoaded]);
 
   if (loading) {
     return (

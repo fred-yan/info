@@ -31,6 +31,13 @@ export function HotspotPage() {
     setSheetOpen(false);
   }, []);
 
+  // 非移动端：数据加载完成后自动选中第一个热词
+  const handleFirstKeywordLoaded = useCallback((keyword: string) => {
+    if (!isMobile) {
+      setSelectedKeyword(prev => prev === null ? keyword : prev);
+    }
+  }, [isMobile]);
+
   const handleKeywordSelect = useCallback((keyword: string) => {
     setSelectedKeyword(keyword);
     if (isMobile) {
@@ -49,11 +56,15 @@ export function HotspotPage() {
     <div className={styles.container}>
       {/* 左侧：词条榜单（桌面端约1/3，移动端全宽） */}
       <div className={styles.leftPanel}>
-        <TabSwitcher activeGroup={activeGroup} onGroupChange={handleGroupChange} />
+        {/* 桌面端 tab 在顶部 */}
+        {!isMobile && (
+          <TabSwitcher activeGroup={activeGroup} onGroupChange={handleGroupChange} />
+        )}
         <KeywordRankingPanel
           group={activeGroup}
           selectedKeyword={selectedKeyword}
           onKeywordSelect={handleKeywordSelect}
+          onFirstKeywordLoaded={handleFirstKeywordLoaded}
         />
       </div>
 
@@ -73,6 +84,13 @@ export function HotspotPage() {
         >
           <DetailPanel keyword={selectedKeyword} group={activeGroup} />
         </BottomSheet>
+      )}
+
+      {/* 移动端：底部固定 tab 栏 */}
+      {isMobile && (
+        <div className={styles.bottomTabBar}>
+          <TabSwitcher activeGroup={activeGroup} onGroupChange={handleGroupChange} />
+        </div>
       )}
     </div>
   );

@@ -22,21 +22,27 @@ export function MultiPlatformPage() {
     return platforms.filter((p) => p.group === activeGroup);
   }, [platforms, activeGroup]);
 
+  const tabBar = (
+    <div className={styles.tabBar} role="tablist" aria-label="平台分组">
+      {TABS.map((tab) => (
+        <button
+          key={tab.key}
+          role="tab"
+          aria-selected={activeGroup === tab.key}
+          className={`${styles.tab}${activeGroup === tab.key ? ` ${styles.tabActive}` : ''}`}
+          onClick={() => handleGroupChange(tab.key)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className={styles.page}>
-      {/* Group Tab Bar */}
-      <div className={styles.tabBar} role="tablist" aria-label="平台分组">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            role="tab"
-            aria-selected={activeGroup === tab.key}
-            className={`${styles.tab}${activeGroup === tab.key ? ` ${styles.tabActive}` : ''}`}
-            onClick={() => handleGroupChange(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* 桌面端 tab 在顶部，移动端隐藏（底部渲染） */}
+      <div className={styles.tabBarDesktop}>
+        {tabBar}
       </div>
 
       {loading ? (
@@ -55,8 +61,11 @@ export function MultiPlatformPage() {
           <MultiPlatformGrid platforms={filteredPlatforms} />
         </div>
       )}
+
+      {/* 移动端底部固定 tab 栏 */}
+      <div className={styles.tabBarMobile}>
+        {tabBar}
+      </div>
     </div>
   );
 }
-
-export default MultiPlatformPage;
