@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useSettingsContext } from '../../contexts/SettingsContext';
 import type { Theme, FontSize } from '../../hooks/useSettings';
 import styles from './NavBar.module.css';
@@ -8,6 +8,7 @@ import styles from './NavBar.module.css';
 
 function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { theme, setTheme, fontSize, setFontSize } = useSettingsContext();
+  const navigate = useNavigate();
 
   const themes: { key: Theme; label: string; icon: string }[] = [
     { key: 'auto',  label: '跟随系统', icon: '🖥' },
@@ -20,6 +21,11 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
     { key: 'medium', label: 'A',  desc: '中' },
     { key: 'large',  label: 'A+', desc: '大' },
   ];
+
+  const handlePlatformStatus = useCallback(() => {
+    onClose();
+    navigate('/platforms');
+  }, [onClose, navigate]);
 
   return (
     <div className={styles.settingsPanel} role="dialog" aria-label="显示设置">
@@ -64,6 +70,25 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className={styles.settingsDivider} />
+
+      <div className={styles.settingsSection}>
+        <button
+          type="button"
+          className={styles.settingsNavBtn}
+          onClick={handlePlatformStatus}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          平台状态
+        </button>
       </div>
     </div>
   );
@@ -118,12 +143,6 @@ export default function NavBar() {
           <NavLink to="/keywords" className={({ isActive }) =>
             isActive ? `${styles.navLink} ${styles.active}` : styles.navLink}>
             热词榜
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to="/platforms" className={({ isActive }) =>
-            isActive ? `${styles.navLink} ${styles.active}` : styles.navLink}>
-            平台状态
           </NavLink>
         </li>
       </ul>
