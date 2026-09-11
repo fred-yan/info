@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { usePlatforms } from '../../hooks/usePlatforms';
 import { isStale } from '../../utils/transformations';
 import { apiClient } from '../../api/client';
@@ -33,9 +33,9 @@ interface ExtractResult {
   error?: string;
 }
 
-type ExtractState =
-  | { status: 'idle' }
-  | { status: 'loading_batches' }
+type SheetState =
+  | { status: 'closed' }
+  | { status: 'loading' }
   | { status: 'selecting'; batches: BatchInfo[]; selectedBatch: string; timeout_seconds: number }
   | { status: 'running'; timeout_seconds: number; start_at: number; batch_id: string }
   | { status: 'done'; data: ExtractResult; batch_id: string }
@@ -44,7 +44,6 @@ type ExtractState =
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatBatchId(bid: string): string {
-  // "20260910_1800" → "09-10 18:00"  |  "human_20260910_1835" → "手动 09-10 18:35"
   const raw = bid.startsWith('human_') ? bid.slice(6) : bid;
   const prefix = bid.startsWith('human_') ? '手动 ' : '';
   const m = raw.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})$/);
@@ -52,38 +51,52 @@ function formatBatchId(bid: string): string {
   return `${prefix}${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
 }
 
-// ── Extract button + batch selector ─────────────────────────────────────────
+// ── Bottom Sheet ─────────────────────────────────────────────────────────────
 
-function ExtractCell({ platformName }: { platformName: string }) {
-  const [state, setState] = useState<ExtractState>({ status: 'idle' });
+interface BottomSheetProps {
+  platformName: string;
+  platformLabel: string;
+  onClose: () => void;
+}
 
-  // Step 1: load available batches
-  const handleOpenSelector = useCallback(async () => {
-    setState({ status: 'loading_batches' });
-    try {
-      const est = await apiClient.get<ExtractEstimate>('/llm/extract/', {
-        platform: platformName,
+function BottomSheet({ platformName, platformLabel, onClose }: BottomSheetProps) {
+  const [state, setState] = useState<SheetState>({ status: 'loading' });
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  // 加载批次列表
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.get<ExtractEstimate>('/llm/extract/', { platform: platformName })
+      .then(est => {
+        if (cancelled) return;
+        const batches = est.available_batches ?? [];
+        const defaultBatch = batches.length > 0 ? batches[0].batch_id : '';
+        setState({
+          status: 'selecting',
+          batches,
+          selectedBatch: defaultBatch,
+          timeout_seconds: est.estimated_timeout_seconds,
+        });
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setState({ status: 'error', message: err instanceof Error ? err.message : '获取批次失败' });
       });
-      if (est.article_count === 0 && est.available_batches.length === 0) {
-        setState({ status: 'error', message: '该平台暂无文章数据' });
-        return;
-      }
-      const batches = est.available_batches ?? [];
-      // 默认选最新批次
-      const defaultBatch = batches.length > 0 ? batches[0].batch_id : '';
-      setState({
-        status: 'selecting',
-        batches,
-        selectedBatch: defaultBatch,
-        timeout_seconds: est.estimated_timeout_seconds,
-      });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '获取批次失败';
-      setState({ status: 'error', message: msg });
-    }
+    return () => { cancelled = true; };
   }, [platformName]);
 
-  // Step 2: run extraction for selected batch
+  // 点遮罩关闭
+  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
+    if (e.target === overlayRef.current) onClose();
+  }, [onClose]);
+
+  // ESC 关闭
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
   const handleExtract = useCallback(async (batchId: string, timeoutSecs: number) => {
     setState({ status: 'running', timeout_seconds: timeoutSecs, start_at: Date.now(), batch_id: batchId });
     try {
@@ -94,99 +107,135 @@ function ExtractCell({ platformName }: { platformName: string }) {
       });
       setState({ status: 'done', data: result, batch_id: batchId });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '提取失败';
-      setState({ status: 'error', message: msg });
+      setState({ status: 'error', message: err instanceof Error ? err.message : '提取失败' });
     }
   }, [platformName]);
 
-  const handleReset = useCallback(() => setState({ status: 'idle' }), []);
-
-  // ── idle ──
-  if (state.status === 'idle') {
-    return (
-      <button type="button" className={styles.extractBtn} onClick={handleOpenSelector}>
-        提取短语
-      </button>
-    );
-  }
-
-  // ── loading batches ──
-  if (state.status === 'loading_batches') {
-    return <span className={styles.extractStatus}>加载批次…</span>;
-  }
-
-  // ── selecting batch ──
-  if (state.status === 'selecting') {
-    const { batches, selectedBatch, timeout_seconds } = state;
-    return (
-      <span className={styles.extractSelector}>
-        <select
-          className={styles.batchSelect}
-          value={selectedBatch}
-          onChange={e => setState({ ...state, selectedBatch: e.target.value })}
-          aria-label="选择批次"
-        >
-          {batches.length === 0 && (
-            <option value="">（无历史批次）</option>
-          )}
-          {batches.map(b => (
-            <option key={b.batch_id} value={b.batch_id}>
-              {formatBatchId(b.batch_id)}
-              {' '}({b.article_count}条{b.extracted ? ' ✓' : ''})
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className={styles.extractBtn}
-          onClick={() => handleExtract(selectedBatch, timeout_seconds)}
-          disabled={!selectedBatch && batches.length > 0}
-        >
-          执行
-        </button>
-        <button type="button" className={styles.extractResetBtn} onClick={handleReset}>
-          取消
-        </button>
-      </span>
-    );
-  }
-
-  // ── running ──
-  if (state.status === 'running') {
-    const elapsed = Math.round((Date.now() - state.start_at) / 1000);
-    return (
-      <span className={styles.extractStatus}>
-        提取中… {elapsed}s / 预计≤{state.timeout_seconds}s
-        {state.batch_id && <span className={styles.batchTag}>{formatBatchId(state.batch_id)}</span>}
-      </span>
-    );
-  }
-
-  // ── error ──
-  if (state.status === 'error') {
-    return (
-      <span className={styles.extractError} title={state.message}>
-        失败
-        <button type="button" className={styles.extractResetBtn} onClick={handleReset}>重试</button>
-      </span>
-    );
-  }
-
-  // ── done ──
-  const { data, batch_id } = state;
   return (
-    <span className={styles.extractDone}>
-      完成 {data.article_count}条/{data.elapsed_seconds}s
-      {data.skipped_by_cache && ' (缓存)'}
-      {batch_id && <span className={styles.batchTag}>{formatBatchId(batch_id)}</span>}
-      <button type="button" className={styles.extractResetBtn} onClick={handleReset}>
-        重置
-      </button>
-    </span>
+    <div className={styles.sheetOverlay} ref={overlayRef} onClick={handleOverlayClick} role="dialog" aria-modal="true" aria-label={`${platformLabel} 短语提取`}>
+      <div className={styles.sheet}>
+        {/* 拖拽把手 */}
+        <div className={styles.sheetHandle} aria-hidden="true" />
+
+        {/* 标题栏 */}
+        <div className={styles.sheetHeader}>
+          <span className={styles.sheetTitle}>{platformLabel} · 短语提取</span>
+          <button type="button" className={styles.sheetClose} onClick={onClose} aria-label="关闭">✕</button>
+        </div>
+
+        {/* 内容区 */}
+        <div className={styles.sheetBody}>
+          {state.status === 'loading' && (
+            <p className={styles.sheetHint}>加载批次列表…</p>
+          )}
+
+          {state.status === 'selecting' && (
+            <>
+              <p className={styles.sheetHint}>
+                选择要提取的批次，已提取的批次标有 ✓
+              </p>
+              <div className={styles.batchList}>
+                {state.batches.length === 0 ? (
+                  <p className={styles.sheetEmpty}>暂无历史批次，将使用最新数据</p>
+                ) : (
+                  state.batches.map(b => (
+                    <label
+                      key={b.batch_id}
+                      className={`${styles.batchItem} ${state.selectedBatch === b.batch_id ? styles.batchItemSelected : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="batch"
+                        value={b.batch_id}
+                        checked={state.selectedBatch === b.batch_id}
+                        onChange={() => setState({ ...state, selectedBatch: b.batch_id })}
+                        className={styles.batchRadio}
+                      />
+                      <span className={styles.batchItemContent}>
+                        <span className={styles.batchItemTime}>{formatBatchId(b.batch_id)}</span>
+                        <span className={styles.batchItemMeta}>
+                          {b.article_count} 条文章
+                          {b.extracted && <span className={styles.batchExtractedTag}>已提取</span>}
+                        </span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              <div className={styles.sheetActions}>
+                <button
+                  type="button"
+                  className={styles.sheetActionBtn}
+                  onClick={() => handleExtract(state.selectedBatch, state.timeout_seconds)}
+                >
+                  开始提取
+                </button>
+                <button type="button" className={styles.sheetCancelBtn} onClick={onClose}>取消</button>
+              </div>
+            </>
+          )}
+
+          {state.status === 'running' && (() => {
+            const elapsed = Math.round((Date.now() - state.start_at) / 1000);
+            return (
+              <div className={styles.sheetRunning}>
+                <div className={styles.sheetSpinner} aria-hidden="true" />
+                <p className={styles.sheetRunningText}>
+                  正在提取 <strong>{formatBatchId(state.batch_id)}</strong> 批次的短语…
+                </p>
+                <p className={styles.sheetRunningMeta}>
+                  已用时 {elapsed}s，预计 ≤{state.timeout_seconds}s
+                </p>
+              </div>
+            );
+          })()}
+
+          {state.status === 'done' && (
+            <div className={styles.sheetDone}>
+              <div className={styles.sheetDoneIcon} aria-hidden="true">✓</div>
+              <p className={styles.sheetDoneTitle}>提取完成</p>
+              <p className={styles.sheetDoneMeta}>
+                批次：{formatBatchId(state.batch_id)}
+                &nbsp;·&nbsp;{state.data.article_count} 条
+                &nbsp;·&nbsp;{state.data.elapsed_seconds}s
+                {state.data.skipped_by_cache && <span className={styles.batchExtractedTag}>缓存</span>}
+              </p>
+              <button type="button" className={styles.sheetCancelBtn} onClick={onClose}>关闭</button>
+            </div>
+          )}
+
+          {state.status === 'error' && (
+            <div className={styles.sheetError}>
+              <p className={styles.sheetErrorText}>{state.message}</p>
+              <button type="button" className={styles.sheetCancelBtn} onClick={onClose}>关闭</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
-// ── Result drawer — shown below the table ────────────────────────────────────
+// ── Extract button (table cell) ──────────────────────────────────────────────
+
+function ExtractCell({ platformName, platformLabel }: { platformName: string; platformLabel: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button type="button" className={styles.extractBtn} onClick={() => setOpen(true)}>
+        提取短语
+      </button>
+      {open && (
+        <BottomSheet
+          platformName={platformName}
+          platformLabel={platformLabel}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -260,7 +309,7 @@ export default function PlatformStatus() {
                   )}
                 </td>
                 <td>
-                  <ExtractCell platformName={platform.name} />
+                  <ExtractCell platformName={platform.name} platformLabel={platform.label} />
                 </td>
               </tr>
             );

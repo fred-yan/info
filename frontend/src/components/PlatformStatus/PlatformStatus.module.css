@@ -1,3 +1,4 @@
+/* ── 页面容器 ── */
 .container {
   max-width: 900px;
   margin: 0 auto;
@@ -11,6 +12,7 @@
   color: var(--text-h, #111827);
 }
 
+/* ── 表格 ── */
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -33,32 +35,20 @@
 }
 
 .table tbody tr:hover {
-  background-color: var(--hover-bg, #f9fafb);
+  background-color: var(--hover-bg, rgba(0,0,0,0.04));
 }
 
 .staleRow {
   background-color: var(--error-bg, #fef2f2);
 }
-
 .staleRow:hover {
   background-color: var(--error-bg, #fef2f2) !important;
   opacity: 0.85;
 }
 
-.labelCell {
-  font-weight: 500;
-  color: var(--text-h, #111827);
-}
-
-.timestampCell {
-  color: var(--text-muted, #6b7280);
-  font-variant-numeric: tabular-nums;
-}
-
-.countCell {
-  font-variant-numeric: tabular-nums;
-  color: var(--text, #374151);
-}
+.labelCell   { font-weight: 500; color: var(--text-h, #111827); }
+.timestampCell { color: var(--text-muted, #6b7280); font-variant-numeric: tabular-nums; }
+.countCell   { font-variant-numeric: tabular-nums; color: var(--text, #374151); }
 
 .groupDomestic {
   display: inline-block;
@@ -101,11 +91,7 @@
   50%       { opacity: 0.4; }
 }
 
-.freshIndicator {
-  color: #16a34a;
-  font-size: 0.8rem;
-  font-weight: 500;
-}
+.freshIndicator { color: #16a34a; font-size: 0.8rem; font-weight: 500; }
 
 .error {
   padding: 1rem;
@@ -114,14 +100,9 @@
   border-radius: 0.5rem;
   color: var(--error-text, #dc2626);
 }
+.empty { color: var(--text-muted, #6b7280); text-align: center; padding: 2rem; }
 
-.empty {
-  color: var(--text-muted, #6b7280);
-  text-align: center;
-  padding: 2rem;
-}
-
-/* ── Extract button & states ── */
+/* ── 提取按钮（表格列） ── */
 .extractBtn {
   padding: 0.2rem 0.6rem;
   font-size: 0.75rem;
@@ -137,69 +118,288 @@
   background: var(--accent-bg, rgba(37,99,235,0.08));
 }
 
-.extractStatus {
+/* ── Bottom Sheet 遮罩 ── */
+.sheetOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  /* 入场动画 */
+  animation: overlayIn 0.18s ease;
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Bottom Sheet 面板 ── */
+.sheet {
+  width: 100%;
+  max-width: 600px;
+  background: var(--card-bg, #ffffff);
+  border-top: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-hover, 0 -4px 24px rgba(0,0,0,0.12));
+  /* 入场动画 */
+  animation: sheetIn 0.22s cubic-bezier(0.34, 1.2, 0.64, 1);
+  overflow: hidden;
+  max-height: 90svh;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes sheetIn {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* 顶部把手 */
+.sheetHandle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border, #e5e7eb);
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}
+
+/* 标题栏 */
+.sheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.sheetTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-h, #111827);
+}
+
+.sheetClose {
+  background: none;
+  border: none;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text-muted, #9ca3af);
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.1s, color 0.1s;
+}
+.sheetClose:hover {
+  background: var(--hover-bg, rgba(0,0,0,0.06));
+  color: var(--text, #374151);
+}
+
+/* 内容区（可滚动） */
+.sheetBody {
+  padding: 0.5rem 1.25rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.sheetHint {
+  font-size: 0.85rem;
+  color: var(--text-muted, #6b7280);
+  margin: 0 0 0.75rem;
+}
+
+.sheetEmpty {
+  font-size: 0.85rem;
+  color: var(--text-muted, #6b7280);
+  text-align: center;
+  padding: 1rem 0;
+}
+
+/* ── 批次列表 ── */
+.batchList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.batchItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--subcard-bg, #f9fafb);
+  transition: border-color 0.12s, background 0.12s;
+}
+.batchItem:hover {
+  background: var(--hover-bg, rgba(0,0,0,0.04));
+  border-color: var(--accent, #2563eb);
+}
+.batchItemSelected {
+  border-color: var(--accent, #2563eb);
+  background: var(--accent-bg, rgba(37,99,235,0.08));
+}
+
+.batchRadio { accent-color: var(--accent, #2563eb); flex-shrink: 0; }
+
+.batchItemContent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.batchItemTime {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-h, #111827);
+}
+
+.batchItemMeta {
   font-size: 0.75rem;
   color: var(--text-muted, #6b7280);
-  white-space: nowrap;
-}
-
-.extractDone {
-  font-size: 0.75rem;
-  color: #16a34a;
-  white-space: nowrap;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.4rem;
 }
 
-.extractError {
-  font-size: 0.75rem;
-  color: var(--error-text, #dc2626);
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.extractResetBtn {
-  padding: 0.1rem 0.4rem;
+.batchExtractedTag {
   font-size: 0.7rem;
-  border: 1px solid currentColor;
-  border-radius: 3px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-/* ── Batch selector ── */
-.extractSelector {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  flex-wrap: nowrap;
-}
-
-.batchSelect {
-  font-size: 0.72rem;
-  padding: 0.15rem 0.3rem;
-  border: 1px solid var(--border, #d1d5db);
-  border-radius: 4px;
-  background: var(--surface, #ffffff);
-  color: var(--text, #374151);
-  cursor: pointer;
-  max-width: 160px;
-}
-
-.batchSelect:focus {
-  outline: 2px solid var(--accent, #2563eb);
-  outline-offset: 1px;
-}
-
-.batchTag {
-  font-size: 0.65rem;
-  padding: 0.1rem 0.35rem;
+  padding: 0.05rem 0.35rem;
   border-radius: 3px;
   background: var(--accent-bg, rgba(37,99,235,0.1));
   color: var(--accent, #2563eb);
-  white-space: nowrap;
+}
+
+/* ── 操作按钮 ── */
+.sheetActions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.sheetActionBtn {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  background: var(--accent, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.sheetActionBtn:hover { opacity: 0.88; }
+.sheetActionBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.sheetCancelBtn {
+  padding: 0.6rem 1rem;
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sheetCancelBtn:hover { background: var(--hover-bg, rgba(0,0,0,0.04)); }
+
+/* ── 运行状态 ── */
+.sheetRunning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 0;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.sheetSpinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border, #e5e7eb);
+  border-top-color: var(--accent, #2563eb);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.sheetRunningText {
+  font-size: 0.9rem;
+  color: var(--text, #374151);
+  margin: 0;
+}
+
+.sheetRunningMeta {
+  font-size: 0.8rem;
+  color: var(--text-muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* ── 完成状态 ── */
+.sheetDone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 0;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.sheetDoneIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.sheetDoneTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-h, #111827);
+  margin: 0;
+}
+
+.sheetDoneMeta {
+  font-size: 0.82rem;
+  color: var(--text-muted, #6b7280);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 0 0 0.5rem;
+}
+
+/* ── 错误状态 ── */
+.sheetError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 0;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.sheetErrorText {
+  font-size: 0.9rem;
+  color: var(--error-text, #dc2626);
+  margin: 0;
 }
