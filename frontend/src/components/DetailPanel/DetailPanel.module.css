@@ -3,6 +3,8 @@
   height: 100%;
   padding: 16px;
   overflow-y: auto;
+  /* 在 BottomSheet 里作为 flex child 时不限高度 */
+  box-sizing: border-box;
 }
 
 .trendSection {
