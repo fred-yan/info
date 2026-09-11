@@ -82,7 +82,7 @@ function ArticleRow({ article }: { article: LatestArticle }) {
   }, [article.id, phrases, showPhrases]);
 
   const allPhrases = phrases
-    ? [...new Set([...phrases.normalized_phrases, ...phrases.extracted_phrases])]
+    ? phrases.normalized_phrases
     : [];
 
   return (
