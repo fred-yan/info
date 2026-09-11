@@ -96,21 +96,23 @@ LOGGING = {
             "backupCount": 5,
             "formatter": "standard",
             "encoding": "utf-8",
+            "delay": True,
         },
     },
     "loggers": {
         "news_homepage_parser": {
-            "handlers": ["console", "file"],
+            # Windows 本地多线程 rename 冲突，只用 console；Linux 生产 console+file
+            "handlers": ["console"] if os.name == "nt" else ["console", "file"],
             "level": "DEBUG" if DEBUG else "INFO",
             "propagate": False,
         },
         "parser_api": {
-            "handlers": ["console", "file"],
+            "handlers": ["console"] if os.name == "nt" else ["console", "file"],
             "level": "INFO",
             "propagate": False,
         },
         "django.request": {
-            "handlers": ["console", "file"],
+            "handlers": ["console"] if os.name == "nt" else ["console", "file"],
             "level": "WARNING",
             "propagate": False,
         },
