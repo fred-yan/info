@@ -43,11 +43,13 @@ function AppInner() {
     <SettingsContext.Provider value={settings}>
       <BrowserRouter>
         <NavBar />
-        <Routes>
-          <Route path="/"          element={<MultiPlatformPage />} />
-          <Route path="/keywords"  element={<HotspotPage />} />
-          <Route path="/platforms" element={<PlatformStatus />} />
-        </Routes>
+        <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Routes>
+            <Route path="/"          element={<MultiPlatformPage />} />
+            <Route path="/keywords"  element={<HotspotPage />} />
+            <Route path="/platforms" element={<PlatformStatus />} />
+          </Routes>
+        </main>
       </BrowserRouter>
     </SettingsContext.Provider>
   );

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { TabSwitcher } from '../components/TabSwitcher';
 import { KeywordRankingPanel } from '../components/KeywordRankingPanel';
 import { DetailPanel } from '../components/DetailPanel';
@@ -23,6 +23,7 @@ export function HotspotPage() {
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const isMobile = useIsMobile();
+  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   const handleGroupChange = useCallback((group: 'domestic' | 'international') => {
     setActiveGroup(group);
@@ -34,6 +35,9 @@ export function HotspotPage() {
     setSelectedKeyword(keyword);
     if (isMobile) {
       setSheetOpen(true);
+    } else {
+      // 桌面端：把右侧详情面板滚到顶部，确保用户能看到更新的内容
+      rightPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [isMobile]);
 
@@ -55,7 +59,7 @@ export function HotspotPage() {
 
       {/* 右侧：详情面板（仅桌面端展示） */}
       {!isMobile && (
-        <div className={styles.rightPanel}>
+        <div className={styles.rightPanel} ref={rightPanelRef}>
           <DetailPanel keyword={selectedKeyword} group={activeGroup} />
         </div>
       )}
@@ -73,5 +77,3 @@ export function HotspotPage() {
     </div>
   );
 }
-
-export default HotspotPage;

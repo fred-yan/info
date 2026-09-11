@@ -1,7 +1,8 @@
 .container {
   display: flex;
   gap: 1rem;
-  height: 100%;
+  flex: 1;          /* 撑满父级 main 的剩余高度 */
+  min-height: 0;    /* flex 子元素 overflow 生效的关键 */
   padding: 1rem;
 }
 
