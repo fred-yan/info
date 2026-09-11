@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { TabSwitcher } from '../components/TabSwitcher';
 import { KeywordRankingPanel } from '../components/KeywordRankingPanel';
 import { DetailPanel } from '../components/DetailPanel';
