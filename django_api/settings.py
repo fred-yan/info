@@ -146,7 +146,7 @@ SCHEDULER_CONCURRENCY = {
 SCHEDULER_CONFIG = {
     'economist': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
-        'enabled': True,
+        'enabled': False,  # 403反爬，暂停抓取
     },
     'apnews': {
         'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
@@ -257,7 +257,7 @@ PLATFORM_GROUPS = {
         "lang": "zh"
     },
     "international": {
-        "platforms": ["economist", "apnews", "theverge", "techcrunch", "mittr", "github", "hackernews"],
+        "platforms": ["apnews", "theverge", "techcrunch", "mittr", "github", "hackernews"],
         "label": "国际热点",
         "lang": "en"
     }
