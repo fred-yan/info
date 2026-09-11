@@ -1,8 +1,37 @@
 import type { KeywordData, ArticleDetail, PlatformArticleGroup } from '../types';
 
 /**
- * Sorts keywords by rank in ascending order.
+ * 平台名称到中文标签的映射，与后端 PLATFORM_LABELS 保持一致。
  */
+export const PLATFORM_LABELS: Record<string, string> = {
+  ftchinese:    'FT中文网',
+  wsj:          '华尔街日报中文版',
+  kr36:         '36氪',
+  huxiu:        '虎嗅',
+  tmtpost:      '钛媒体',
+  jiqizhixin:   '机器之心',
+  cls:          '财联社',
+  wscn:         '华尔街见闻',
+  zaobao:       '联合早报',
+  zhihu:        '知乎',
+  weibo:        '微博',
+  pengpai:      '澎湃新闻',
+  economist:    'The Economist',
+  apnews:       'AP News',
+  washingtonpost: 'Washington Post',
+  theverge:     'The Verge',
+  techcrunch:   'TechCrunch',
+  mittr:        'MIT Technology Review',
+  github:       'GitHub Trending',
+  hackernews:   'Hacker News',
+};
+
+/**
+ * 将平台 key 转为中文显示名，未知平台原样返回。
+ */
+export function getPlatformLabel(platform: string): string {
+  return PLATFORM_LABELS[platform] ?? platform;
+}
 export function sortKeywordsByRank(keywords: KeywordData[]): KeywordData[] {
   return [...keywords].sort((a, b) => a.rank - b.rank);
 }

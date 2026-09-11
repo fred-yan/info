@@ -1,5 +1,5 @@
 import type { ArticleListProps } from '../../types';
-import { groupArticlesByPlatform } from '../../utils/transformations';
+import { groupArticlesByPlatform, getPlatformLabel } from '../../utils/transformations';
 import { EmptyState } from '../EmptyState';
 import styles from './ArticleList.module.css';
 
@@ -23,7 +23,7 @@ export function ArticleList({ articles }: ArticleListProps) {
       {groups.map((group) => (
         <div key={group.platform} className={styles.platformGroup}>
           <div className={styles.groupHeader}>
-            <span>{group.platform}</span>
+            <span>{getPlatformLabel(group.platform)}</span>
             <span className={styles.articleCount}>({group.count})</span>
           </div>
           {group.articles.map((article) => (
@@ -37,7 +37,7 @@ export function ArticleList({ articles }: ArticleListProps) {
                 {article.title}
               </a>
               <div className={styles.articleMeta}>
-                <span className={styles.platformLabel}>{article.platform}</span>
+                <span className={styles.platformLabel}>{getPlatformLabel(article.platform)}</span>
                 <span>{formatDate(article.date)}</span>
               </div>
             </div>
