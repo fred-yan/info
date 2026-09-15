@@ -147,98 +147,98 @@ SCHEDULER_CONCURRENCY = {
 #   "0 0 * * 0"     - 每周日0点
 SCHEDULER_CONFIG = {
     'economist': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': False,  # 403反爬，暂停抓取
     },
     'apnews': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'ftchinese': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': False,  # FT中文网需要订阅账号，暂停抓取
     },
     'wsj': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': False,  # cn.wsj.com 需要订阅账号，RSS 已关闭，暂停抓取
     },
     'kr36': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'tmtpost': {
-        'cron': '0 6,12,18,0 * * *',
+        'cron': '0 6 * * *',
         'enabled': True,
     },
     'theverge': {
-        'cron': '0 6,12,18,0 * * *',
+        'cron': '0 6 * * *',
         'enabled': True,
     },
     'techcrunch': {
-        'cron': '0 6,12,18,0 * * *',
+        'cron': '0 6 * * *',
         'enabled': True,
     },
     'mittr': {
-        'cron': '0 6,12,18,0 * * *',
+        'cron': '0 6 * * *',
         'enabled': True,
     },
     'jiqizhixin': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'cls': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'wscn': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'huxiu': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'zaobao': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'zaobao_hotlist': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'github_trending_daily': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
         'params': {'since': 'daily'},
     },
     'github_trending_weekly': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
         'params': {'since': 'weekly'},
     },
     'github_trending_monthly': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
         'params': {'since': 'monthly'},
     },
     'hacker_news': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'zhihu': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'weibo': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'pengpai': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': True,
     },
     'washingtonpost': {
-        'cron': '0 6,12,18,0 * * *',  # 每天6/12/18/0点
+        'cron': '0 6 * * *',  # 每天早上6点
         'enabled': False,  # 需要代理且反爬较强，暂停抓取
     },
     'keyword_analysis': {
