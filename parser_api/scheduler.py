@@ -181,7 +181,11 @@ def _start_batch():
     向 SchedulerTask 表写入本批次所有任务记录，然后由 poll 循环逐步执行。
     若当前批次已存在（重复触发），跳过。
     """
+    from django.db import close_old_connections
     from .models import SchedulerTask
+
+    # 确保数据库连接新鲜，防止长时间空闲后连接被 MySQL server 断开
+    close_old_connections()
 
     batch_id = datetime.now().strftime('%Y%m%d_%H%M')
     logger.info("[Scheduler] _start_batch called: batch_id=%s worker=%s", batch_id, _WORKER_ID)
@@ -252,7 +256,10 @@ def _start_batch():
 
 
 def _batch_hard_timeout(batch_id: str):
+    from django.db import close_old_connections
     from .models import SchedulerTask
+
+    close_old_connections()
 
     logger.warning("[Scheduler] Hard timeout triggered for batch %s", batch_id)
 
@@ -629,8 +636,10 @@ def _reclaim_orphaned_tasks():
 
 
 def _detect_zombie_tasks():
+    from django.db import close_old_connections
     from .models import SchedulerTask
 
+    close_old_connections()
     now = timezone.now()
     zombies = list(SchedulerTask.objects.filter(
         status=SchedulerTask.STATUS_RUNNING,
