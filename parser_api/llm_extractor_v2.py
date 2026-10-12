@@ -170,7 +170,8 @@ def _validate_stage2_result(
     seen_representatives: set[str] = set()
 
     # ── E-5: 组数量合理性 ────────────────────────────────────
-    min_expected = max(5, int(input_phrase_count * 0.15))
+    # min_expected 不超过输入短语数，防止输入本身很少时误判
+    min_expected = min(input_phrase_count, max(5, int(input_phrase_count * 0.15)))
     if len(groups) < min_expected:
         errors.append(
             f"[E5] phrase_groups 过少: 输入{input_phrase_count}个短语，"
@@ -366,7 +367,8 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
 
     logger.info("  Total unique phrases: %d", len(phrase_to_article_ids))
 
-    STAGE2_MIN_FREQ = 2
+    # 国内平台话题集中，freq>=2 确保热点共识；国际平台话题分散，freq>=1 保留更多信号
+    STAGE2_MIN_FREQ = 1 if group == "international" else 2
     STAGE2_MAX_PHRASES = 300
     STAGE2_BATCH_SIZE = 150
 
