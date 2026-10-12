@@ -342,6 +342,7 @@ def extract_keywords_llm_v2(group: str = "domestic", top: int = 50,
 
     if use_cache:
         extractions = LLMPhraseExtraction.objects.filter(
+            article_id__in=all_article_ids,        # 只取当前 group 的文章，防止跨组污染
             analysis_time__gte=now - timedelta(hours=12),
         )
     else:
